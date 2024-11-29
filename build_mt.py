@@ -49,6 +49,7 @@ DEFAULTS['catalog_parent'] = "/pscratch/sd/b/boryanah/abacus_halo_light_cones/"
 #DEFAULTS['catalog_parent'] = "/global/cscratch1/sd/boryanah/new_lc_halos/"
 DEFAULTS['z_start'] = 0.2 # 0.1
 DEFAULTS['z_stop'] = 2.5
+DEFAULTS['rpd'] = 7
 DEFAULTS['superslab_start'] = 0
 CONSTANTS = {'c': 299792.458}  # km/s, speed of light
 
@@ -80,7 +81,7 @@ def correct_inds(halo_ids, N_halos_slabs, slabs, inds_fn):
 
     return ids
 
-def get_mt_info(fn_load, fields, minified):
+def get_mt_info(fn_load, fn_halo_load, fields, minified):
     '''
     Load merger tree and progenitors information
     '''
@@ -99,10 +100,12 @@ def get_mt_info(fn_load, fields, minified):
         start_progs = np.zeros(len(num_progs), dtype=int)
         start_progs[1:] = num_progs.cumsum()[:-1]
         Merger.add_column(start_progs, name='StartProgenitors', copy=False)
-        
+
+    # add cleaned masses
+    Merger.add_column(CompaSOHaloCatalog(fn_halo_load, subsamples=False, fields=['N']).halos['N'], copy=False, name='N')
     return mt_data
 
-def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, Lbox, origin, chs, complete=False, extra=4.):
+def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, m1, m2, Lbox, origin, chs, complete=False, extra=4.):
     '''
     Solve when the crossing of the light cones occurs and the
     interpolated position and velocity. Merger trees loook for progenitors in a 4 Mpc/h radius
@@ -126,6 +129,10 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, Lbox, origin, chs, complete=F
     v_avg = (pos2 - pos1) / (chi1 - chi2)
     pos_star = pos1 + v_avg * (chi1 - chi_star[:, None])
 
+    # get interpolated masses of the halos
+    m_dot = (m2 - m1) / (chi1 - chi2)
+    m_star = m1 + m_dot * (chi1 - chi_star)
+    
     # enforce boundary conditions by periodic wrapping
     #pos_star[pos_star >= Lbox/2.] = pos_star[pos_star >= Lbox/2.] - Lbox
     #pos_star[pos_star < -Lbox/2.] = pos_star[pos_star < -Lbox/2.] + Lbox
@@ -143,7 +150,7 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, Lbox, origin, chs, complete=F
     # condition to check whether halo in this light cone band
     assert np.all(((chi_star <= chs[1]+extra) & (chi_star > chs[0]-extra))), "Solution is out of bounds"
 
-    return chi_star, pos_star, vel_star, bool_star
+    return chi_star, pos_star, vel_star, m_star, bool_star
     
 def offset_pos(pos,ind_origin,all_origins):
     '''
@@ -157,7 +164,7 @@ def offset_pos(pos,ind_origin,all_origins):
     pos += offset
     return pos
 
-def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_parent, superslab_start, resume=False, plot=False, complete=False):
+def main(sim_name, z_start, z_stop, rpd, compaso_parent, merger_parent, catalog_parent, superslab_start, resume=False, plot=False, complete=False):
     '''
     Main function.
     The algorithm: for each merger tree epoch, for 
@@ -185,8 +192,6 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
     Lbox = header['BoxSize']
     # location of the LC origins in Mpc/h
     #origins = np.array(header['LightConeOrigins']).reshape(-1,3)
-    # tuks define 7**3 origins as input parameter
-    rpd = 7
     origins = np.zeros((rpd**3, 3))
     for i in range(rpd):
         ip = i
@@ -222,7 +227,6 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
         np.save(Path("data_headers") / sim_name / "eta_drift.npy", etad_all)
     zs_all = np.load(Path("data_headers") / sim_name / "redshifts.npy")
     chis_all = np.load(Path("data_headers") / sim_name / "coord_dist.npy")
-    
     zs_all[-1] = float("%.1f" % zs_all[-1])  # LHG: I guess this is trying to match up to some filename or something? tuks
 
     # get functions relating chi and z
@@ -272,7 +276,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
 
     # fields to extract from the merger trees
     fields_mt = ['HaloIndex', 'Position', 'MainProgenitor', 'Progenitors', 'NumProgenitors']
-    # lighter version tuks
+    # lighter version tuks could we add N here from the cleaned catalogs
     #fields_mt = ['HaloIndex', 'Position', 'MainProgenitor']
     
     for i in range(ind_start, ind_stop + 1):
@@ -285,6 +289,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
 
         # how to name folder
         zname_this = min(header['L1OutputRedshifts'], key=lambda z: abs(z - z_this))
+        zname_prev = min(header['L1OutputRedshifts'], key=lambda z: abs(z - z_prev))
         
         # check that you are starting at a reasonable redshift
         assert z_this >= np.min(zs_all), "You need to set starting redshift to the smallest value of the merger tree"
@@ -324,6 +329,10 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
         fns_this = reorder_by_slab(fns_this, minified)
         fns_prev = reorder_by_slab(fns_prev, minified)
 
+        # halo info files (used for masses and eligibility)
+        fns_halo_this = [str(cat_dir / f"z{zname_this:4.3f}" / 'halo_info' / f'halo_info_{counter:03d}.asdf') for counter in range(n_superslabs)]
+        fns_halo_prev = [str(cat_dir / f"z{zname_prev:4.3f}" / 'halo_info' / f'halo_info_{counter:03d}.asdf') for counter in range(n_superslabs)]
+
         # get number of halos in each slab and number of slabs
         N_halos_slabs_this, slabs_this = get_halos_per_slab(fns_this, minified)
         N_halos_slabs_prev, slabs_prev = get_halos_per_slab(fns_prev, minified)
@@ -332,11 +341,8 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
         # reading the "high" slab at the leading edge, discarding the trailing "low" slab
         # and moving the mid to low. But first we need to read all three to prime the queue
         mt_prev = {}  # indexed by slab num
-        mt_prev[(superslab_start-1)%n_superslabs] = get_mt_info(fns_prev[(superslab_start-1)%n_superslabs], fields=fields_mt, minified=minified)
-        mt_prev[superslab_start] = get_mt_info(fns_prev[superslab_start], fields=fields_mt, minified=minified)
-
-        # halo info files (used for eligibility)
-        fns_halo_this = [str(cat_dir / f"z{zname_this:4.3f}" / 'halo_info' / f'halo_info_{counter:03d}.asdf') for counter in range(n_superslabs)]
+        mt_prev[(superslab_start-1)%n_superslabs] = get_mt_info(fns_prev[(superslab_start-1)%n_superslabs], fns_halo_prev[(superslab_start-1)%n_superslabs], fields=fields_mt, minified=minified)
+        mt_prev[superslab_start] = get_mt_info(fns_prev[superslab_start], fns_halo_prev[superslab_start], fields=fields_mt, minified=minified)
         
         # loop over each superslab
         for k in range(superslab_start,n_superslabs):
@@ -347,7 +353,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
             # slide down by one
             if (klow-1)%n_superslabs in mt_prev:
                 del mt_prev[(klow-1)%n_superslabs]
-            mt_prev[khigh] = get_mt_info(fns_prev[khigh], fields_mt, minified)
+            mt_prev[khigh] = get_mt_info(fns_prev[khigh], fns_halo_prev[khigh], fields_mt, minified)
             
             # starting and finishing superslab superslabs
             inds_fn_this = [k]
@@ -358,7 +364,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
             print("superslabs loaded in this and previous redshifts = ",inds_fn_this, inds_fn_prev)
             
             # get merger tree data for this snapshot and for the previous one
-            mt_data_this = get_mt_info(fns_this[k], fields_mt, minified)
+            mt_data_this = get_mt_info(fns_this[k], fns_halo_this[k], fields_mt, minified)
             
             # number of halos in this step and previous step; this depends on the number of files requested
             N_halos_this = np.sum(N_halos_slabs_this[inds_fn_this])
@@ -366,20 +372,25 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
             print("N_halos_this = ", N_halos_this)
             print("N_halos_prev = ", N_halos_prev)
 
-            # organize data into astropy tables
+            # organize data from this redshift into astropy tables
             Merger_this = mt_data_this['merger']
             cols = {col:np.empty(N_halos_prev, dtype=(Merger_this[col].dtype, Merger_this[col].shape[1] if 'Position' in col else 1)) for col in Merger_this.keys()}
             Merger_prev = Table(cols, copy=False)
+
+            # make a boolean array with eligible halos
+            clean_halos_this = Merger_this['N'] > 0
+
+            # organize data from prev redshift into astropy tables
             offset = 0
             for key in mt_prev.keys():
                 size_superslab = len(mt_prev[key]['merger']['HaloIndex'])
                 Merger_prev[offset:offset+size_superslab] = mt_prev[key]['merger'][:]
                 offset += size_superslab
-                
+
             # mask where no merger tree info is available (because we don'to need to solve for eta star for those)
             noinfo_this = Merger_this['MainProgenitor'] <= 0
             info_this = Merger_this['MainProgenitor'] > 0
-            
+
             # print percentage where no information is available or halo not eligible
             print("percentage no info = ", np.sum(noinfo_this) / len(noinfo_this) * 100.0)
 
@@ -405,10 +416,6 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                 slabs_prev,
                 inds_fn_prev,
             )
-
-            # make a boolean array with eligible halos
-            clean_halos = CompaSOHaloCatalog(fns_halo_this[k], subsamples=False, fields=['N']).halos['N'] > 0
-            assert N_halos_this == len(clean_halos), "This should match, though note that the `prev' one may not if loading 3 files."
             
             # loop over all origins
             for o in range(len(origins)):
@@ -419,6 +426,19 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                 # https://math.stackexchange.com/questions/2133217/minimal-distance-to-a-cube-in-2d-and-3d-from-a-point-lying-outside
                 d_min = np.sqrt(np.max([0., np.abs(origin[0]) - Lbox/2.])**2. + np.max([0., np.abs(origin[1]) - Lbox/2.])**2. + np.max([0., np.abs(origin[2]) - Lbox/2.])**2.)
                 d_max = d_min + np.sqrt(3.)*Lbox # the max possible distance (larger than needed, but haven't done the proper calculation)
+
+                # if interpolating to z = 0.1 (kinda ugly way to do this)
+                if complete and np.abs(z_this - 0.1) < 1.e-3: # tuks
+                    print(f"extending {z_this:4.3f} all the way to z = 0")
+                    chi_low = 0.
+                else:
+                    chi_low = chi_this
+                
+                # condition for selecting halos with merger tree information
+                #chs = np.array([chi_low, chi_prev], dtype=np.float32) # doesn't take past halos
+                chs = np.array([chi_low - delta_chi_old / 2.0, chi_prev], dtype=np.float32) # taking some additional objects from before
+                #chs = np.array([chi_low - delta_chi_old / 2.0, chi_prev + delta_chi_new / 2.0], dtype=np.float32) # TESTING
+                if d_min > chs[1] or d_max < chs[0]: continue
                 
                 # comoving distance to observer
                 Merger_this['ComovingDistance'][:] = dist(Merger_this['Position'], origin)
@@ -434,11 +454,11 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                         eligibility_this = np.load(cat_lc_dir / "tmp" / ("eligibility_prev_z%4.3f_lc%d.%02d.npy"%(z_this, o, k)))
                         eligibility_extrap_this = np.load(cat_lc_dir / "tmp" / ("eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy"%(z_this, o, k)))
                     else:
-                        eligibility_this = np.ones(N_halos_this, dtype=bool) & clean_halos
-                        eligibility_extrap_this = np.ones(N_halos_this, dtype=bool) & clean_halos
+                        eligibility_this = np.ones(N_halos_this, dtype=bool) & clean_halos_this
+                        eligibility_extrap_this = np.ones(N_halos_this, dtype=bool) & clean_halos_this
                 else:
-                    eligibility_this = np.ones(N_halos_this, dtype=bool) & clean_halos
-                    eligibility_extrap_this = np.ones(N_halos_this, dtype=bool) & clean_halos
+                    eligibility_this = np.ones(N_halos_this, dtype=bool) & clean_halos_this
+                    eligibility_extrap_this = np.ones(N_halos_this, dtype=bool) & clean_halos_this
                 
                 # for a newly opened redshift, everyone is eligible to be part of the light cone catalog
                 eligibility_prev = np.ones(N_halos_prev, dtype=bool)
@@ -455,19 +475,8 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                 
                 # halos that don't have merger tree information
                 Merger_this_noinfo = Merger_this[mask_noinfo_this].copy()
-                
-                # if interpolating to z = 0.1 (kinda ugly way to do this)
-                if complete and np.abs(z_this - 0.1) < 1.e-3: # tuks
-                    print(f"extending {z_this:4.3f} all the way to z = 0")
-                    chi_low = 0.
-                else:
-                    chi_low = chi_this
 
                 # select objects that are crossing the light cones
-                #chs = np.array([chi_low, chi_prev], dtype=np.float32) # doesn't take past halos
-                chs = np.array([chi_low - delta_chi_old / 2.0, chi_prev], dtype=np.float32) # taking some additional objects from before
-                #chs = np.array([chi_low - delta_chi_old / 2.0, chi_prev + delta_chi_new / 2.0], dtype=np.float32) # TESTING
-                if d_min > chs[1] or d_max < chs[0]: continue
                 cond_1 = ((Merger_this_info['ComovingDistance'] > chs[0]) & (Merger_this_info['ComovingDistance'] <= chs[1]))
                 cond_2 = ((Merger_prev_main_this_info['ComovingDistance'] > chs[0]) & (Merger_prev_main_this_info['ComovingDistance'] <= chs[1]))                
                 mask_lc_this_info = cond_1 | cond_2
@@ -475,10 +484,8 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
 
                 # for halos that have no merger tree information, we simply take their current position
                 # og
-                chs_no = np.array([chi_low - delta_chi_old / 2.0, chi_low + delta_chi / 2.0])
-                if d_min > chs_no[1] or d_max < chs_no[0]: continue
-                cond_1 = (Merger_this_noinfo['ComovingDistance'] > chs_no[0])
-                cond_2 = (Merger_this_noinfo['ComovingDistance'] <= chs_no[1])
+                cond_1 = (Merger_this_noinfo['ComovingDistance'] > chi_low - delta_chi_old / 2.0)
+                cond_2 = (Merger_this_noinfo['ComovingDistance'] <= chi_low + delta_chi / 2.0)
                 
                 # TESTING
                 #cond_1 = (Merger_this_noinfo['ComovingDistance'] > chi_low)
@@ -541,15 +548,17 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                 Merger_this_noinfo_lc = Merger_this_noinfo[mask_lc_this_noinfo]
                 
                 # add columns for new interpolated position, velocity and comoving distance tuks could add all in one line; could shorten names
-                Merger_this_info_lc.add_column('InterpolatedPosition',copy=False)
-                Merger_this_info_lc.add_column('InterpolatedVelocity',copy=False)
-                Merger_this_info_lc.add_column('InterpolatedComoving',copy=False)
+                Merger_this_info_lc.add_column(np.empty(len(Merger_this_info_lc), dtype=(np.float32, 3)), copy=False, name='InterpolatedPosition')
+                Merger_this_info_lc.add_column(np.empty(len(Merger_this_info_lc), dtype=(np.float32, 3)), copy=False, name='InterpolatedVelocity')
+                Merger_this_info_lc.add_column(np.empty(len(Merger_this_info_lc), dtype=np.float32), copy=False, name='InterpolatedComoving')
+                Merger_this_info_lc.add_column(np.empty(len(Merger_this_info_lc), dtype=np.float32), copy=False, name='InterpolatedN')
                 
                 # get chi star where lc crosses halo trajectory; bool is False where closer to previous
                 (
                     Merger_this_info_lc['InterpolatedComoving'],
                     Merger_this_info_lc['InterpolatedPosition'],
                     Merger_this_info_lc['InterpolatedVelocity'],
+                    Merger_this_info_lc['InterpolatedN'],
                     bool_star_this_info_lc,
                 ) = solve_crossing(
                     Merger_prev_main_this_info_lc['ComovingDistance'],
@@ -558,12 +567,13 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                     Merger_this_info_lc['Position'],
                     chi_prev,
                     chi_this,
+                    Merger_prev_main_this_info_lc['N'],
+                    Merger_this_info_lc['N'],
                     Lbox,
                     origin,
                     chs,
                     complete=(complete and np.abs(z_this - 0.1) < 1.e-3), # tuks
                 )
-
                 
                 # number of objects in this light cone
                 N_this_star_lc = np.sum(bool_star_this_info_lc)
@@ -607,7 +617,8 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                     {'HaloIndex':np.zeros(N_lc, dtype=Merger_this_info_lc['HaloIndex'].dtype),
                      'InterpolatedVelocity': np.zeros(N_lc, dtype=(np.float32,3)),
                      'InterpolatedPosition': np.zeros(N_lc, dtype=(np.float32,3)),
-                     'InterpolatedComoving': np.zeros(N_lc, dtype=np.float32)
+                     'InterpolatedComoving': np.zeros(N_lc, dtype=np.float32),
+                     'InterpolatedN': np.zeros(N_lc, dtype=np.float32),
                     }
                 )
 
@@ -615,12 +626,14 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                 Merger_lc['InterpolatedPosition'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedPosition'][bool_star_this_info_lc]
                 Merger_lc['InterpolatedVelocity'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedVelocity'][bool_star_this_info_lc]
                 Merger_lc['InterpolatedComoving'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedComoving'][bool_star_this_info_lc]
+                Merger_lc['InterpolatedN'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedN'][bool_star_this_info_lc]
                 Merger_lc['HaloIndex'][:N_this_star_lc] = Merger_this_info_lc['HaloIndex'][bool_star_this_info_lc]
 
                 # record interpolated position and velocity of the halos in the light cone without progenitor information
                 Merger_lc['InterpolatedPosition'][N_this_star_lc:N_this_star_lc+N_this_noinfo_lc] = Merger_this_noinfo_lc['Position']
                 Merger_lc['InterpolatedVelocity'][N_this_star_lc:N_this_star_lc+N_this_noinfo_lc] = np.zeros_like(Merger_this_noinfo_lc['Position'])
                 Merger_lc['InterpolatedComoving'][N_this_star_lc:N_this_star_lc+N_this_noinfo_lc] = Merger_this_noinfo_lc['ComovingDistance'] # assign comoving distance based on position; used to be np.ones(Merger_this_noinfo_lc['Position'].shape[0])*chi_this
+                Merger_lc['InterpolatedN'][N_this_star_lc:N_this_star_lc+N_this_noinfo_lc] = Merger_this_noinfo_lc['N']
                 Merger_lc['HaloIndex'][N_this_star_lc:N_this_star_lc+N_this_noinfo_lc] = Merger_this_noinfo_lc['HaloIndex']
                 del Merger_this_noinfo_lc
 
@@ -633,6 +646,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                         Merger_lc['InterpolatedPosition'][-N_next_lc:] = Merger_next['InterpolatedPosition'][:]
                         Merger_lc['InterpolatedVelocity'][-N_next_lc:] = Merger_next['InterpolatedVelocity'][:]
                         Merger_lc['InterpolatedComoving'][-N_next_lc:] = Merger_next['InterpolatedComoving'][:]
+                        Merger_lc['InterpolatedN'][-N_next_lc:] = Merger_next['InterpolatedN'][:]
                         Merger_lc['HaloIndex'][-N_next_lc:] = Merger_next['HaloIndex'][:]
                         del Merger_next
                     resume_flags[k, o] = False
@@ -685,13 +699,15 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                     {'HaloIndex': np.zeros(N_next, dtype=Merger_lc['HaloIndex'].dtype),
                      'InterpolatedVelocity': np.zeros(N_next, dtype=(np.float32,3)),
                      'InterpolatedPosition': np.zeros(N_next, dtype=(np.float32,3)),
-                     'InterpolatedComoving': np.zeros(N_next, dtype=np.float32)
+                     'InterpolatedComoving': np.zeros(N_next, dtype=np.float32),
+                     'InterpolatedN': np.zeros(N_next, dtype=np.float32)
                     }
                 )
                 Merger_next['HaloIndex'][:] = Merger_prev_main_this_info_lc['HaloIndex'][~bool_star_this_info_lc]
                 Merger_next['InterpolatedVelocity'][:] = Merger_this_info_lc['InterpolatedVelocity'][~bool_star_this_info_lc]
                 Merger_next['InterpolatedPosition'][:] = Merger_this_info_lc['InterpolatedPosition'][~bool_star_this_info_lc]
                 Merger_next['InterpolatedComoving'][:] = Merger_this_info_lc['InterpolatedComoving'][~bool_star_this_info_lc]
+                Merger_next['InterpolatedN'][:] = Merger_this_info_lc['InterpolatedN'][~bool_star_this_info_lc]
                 del Merger_this_info_lc, Merger_prev_main_this_info_lc
 
                 if plot:
@@ -729,9 +745,6 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                     plt.savefig('interp_%d_%d_%d.png'%(i, k, o))
                     #plt.show()
                     plt.close()
-                    
-                gc.collect()
-                
                 
                 # pack halo indices for the halos in Merger_next
                 offset = 0
@@ -758,6 +771,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, merger_parent, catalog_paren
                     np.save(cat_lc_dir / "tmp" / ("eligibility_prev_z%4.3f_lc%d.%02d.npy"%(z_prev, o, idx)), eligibility_prev_idx)
                     np.save(cat_lc_dir / "tmp" / ("eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy"%(z_prev, o, idx)), eligibility_extrap_prev_idx)
                     offset += N_halos_slabs_prev[idx]
+                gc.collect()
 
                 # write as table the information about halos that are part of next loaded redshift
                 save_asdf(Merger_next, ("Merger_next_z%4.3f_lc%d.%02d"%(z_prev, o, k)), header, cat_lc_dir / "tmp")
@@ -784,6 +798,7 @@ if __name__ == '__main__':
     parser.add_argument('--sim_name', help='Simulation name', default=DEFAULTS['sim_name'])
     parser.add_argument('--z_start', help='Initial redshift where we start building the trees', type=float, default=DEFAULTS['z_start'])
     parser.add_argument('--z_stop', help='Final redshift (inclusive)', type=float, default=DEFAULTS['z_stop'])
+    parser.add_argument('--rpd', help='Repetitions per dimension', type=int, default=DEFAULTS['rpd'])
     parser.add_argument('--compaso_parent', help='CompaSO directory', default=(DEFAULTS['compaso_parent']))
     parser.add_argument('--merger_parent', help='Merger tree directory', default=(DEFAULTS['merger_parent']))
     parser.add_argument('--catalog_parent', help='Light cone catalog directory', default=(DEFAULTS['catalog_parent']))
