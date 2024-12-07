@@ -25,7 +25,6 @@ from scipy.interpolate import interp1d
 
 from tools.aid_asdf import save_asdf
 from tools.compute_dist import dist, wrapping
-from tools.InputFile import InputFile
 from tools.merger import (
     get_halos_per_slab,
     get_one_header,
@@ -36,22 +35,7 @@ from tools.merger import (
     simple_load,
     unpack_inds,
 )
-from tools.read_headers import get_lc_info
 
-# these are probably just for testing; should be removed for production
-DEFAULTS = {}
-DEFAULTS['sim_name'] = 'AbacusSummit_small_c000_ph3000'
-# DEFAULTS['compaso_parent'] = "/global/cfs/projectdirs/desi/cosmosim/Abacus"
-DEFAULTS['compaso_parent'] = '/global/cfs/projectdirs/desi/cosmosim/Abacus/small'
-# DEFAULTS['merger_parent'] = "/global/project/projectdirs/desi/cosmosim/Abacus/merger"
-DEFAULTS['merger_parent'] = '/pscratch/sd/l/lgarriso/backlight/merger/small/'
-# DEFAULTS['catalog_parent'] = "/global/project/projectdirs/desi/cosmosim/Abacus/halo_light_cones/"
-DEFAULTS['catalog_parent'] = '/pscratch/sd/b/boryanah/abacus_halo_light_cones/'
-# DEFAULTS['catalog_parent'] = "/global/cscratch1/sd/boryanah/new_lc_halos/"
-DEFAULTS['z_start'] = 0.2  # 0.1
-DEFAULTS['z_stop'] = 2.5
-DEFAULTS['rpd'] = 7
-DEFAULTS['superslab_start'] = 0
 CONSTANTS = {'c': 299792.458}  # km/s, speed of light
 
 
@@ -84,7 +68,7 @@ def correct_inds(halo_ids, N_halos_slabs, slabs, inds_fn):
     return ids
 
 
-def get_mt_info(fn_load, fn_halo_load, fields, minified):
+def get_mt_info(fn_load, fn_halo_load, fields):
     """
     Load merger tree and progenitors information
     """
@@ -104,7 +88,8 @@ def get_mt_info(fn_load, fn_halo_load, fields, minified):
     if 'Progenitors' in fields:
         num_progs = Merger['NumProgenitors']
         # get an array with the starting indices of the progenitors array
-        start_progs = np.zeros(len(num_progs), dtype=int)
+        start_progs = np.empty(len(num_progs), dtype=int)
+        start_progs[0] = 0
         start_progs[1:] = num_progs.cumsum()[:-1]
         Merger.add_column(start_progs, name='StartProgenitors', copy=False)
 
@@ -179,14 +164,12 @@ def offset_pos(pos, ind_origin, all_origins):
 
 
 def main(
-    sim_name,
-    z_start,
-    z_stop,
-    rpd,
-    compaso_parent,
-    merger_parent,
-    catalog_parent,
-    superslab_start,
+    sim_path,
+    superslab_start=0,
+    output_parent=None,
+    merger_parent=None,
+    z_start=None,
+    z_stop=None,
     resume=False,
     plot=False,
     complete=False,
@@ -207,112 +190,101 @@ def main(
     """
 
     # turn directories into Paths
-    compaso_parent = Path(compaso_parent)
+    sim_path = Path(sim_path)
+    sim_name = sim_path.name
+
+    if output_parent is None:
+        output_parent = sim_path.parent / 'halo_light_cones'
+
+    if merger_parent is None:
+        merger_parent = sim_path.parent / 'merger'
+
     merger_parent = Path(merger_parent)
-    catalog_parent = Path(catalog_parent)
+    output_parent = Path(output_parent)
     merger_dir = merger_parent / sim_name
-    cat_dir = compaso_parent / sim_name / 'halos'
     header = get_one_header(merger_dir)
 
     # simulation parameters
     Lbox = header['BoxSize']
     # location of the LC origins in Mpc/h
+    # FUTURE: each LCOrigin is repeated LCBoxRepeats times
     # origins = np.array(header['LightConeOrigins']).reshape(-1,3)
-    origins = np.zeros((rpd**3, 3))
-    for i in range(rpd):
-        ip = i
-        if i > rpd // 2:
-            i -= rpd
-        for j in range(rpd):
-            jp = j
-            if j > rpd // 2:
-                j -= rpd
-            for k in range(rpd):
-                kp = k
-                if k > rpd // 2:
-                    k -= rpd
-                ijk = ip * rpd**2 + jp * rpd**1 + kp * rpd**0
-                origins[ijk, 0] += i * Lbox
-                origins[ijk, 1] += j * Lbox
-                origins[ijk, 2] += k * Lbox
+    assert len(np.array(header['LCOrigins']).reshape(-1,3)) == 1
+    rpd = 2 * header.get('LCBoxRepeats', 1) + 1
+    
+    # The rpd^3 box origins, in "Fourier" order, i.e.:
+    # [0, 1, ..., N//2, -N//2, ..., -1] (in each dimension)
+    origins = np.mgrid[:rpd,:rpd,:rpd].reshape(3,-1).T
+    origins[origins > rpd // 2] -= rpd
+    origins = origins * Lbox
 
     # directory where we save the final outputs
-    cat_lc_dir = catalog_parent / 'halo_light_cones' / sim_name
+    cat_lc_dir = output_parent / sim_name
     cat_lc_dir.mkdir(exist_ok=True, parents=True)
 
     # directory where we save the current state if we want to resume
     (cat_lc_dir / 'tmp').mkdir(exist_ok=True, parents=True)
-    with open(cat_lc_dir / 'tmp' / 'build.log', 'a') as f:
-        f.writelines(['# Starting light cone catalog construction in simulation %s \n' % sim_name])
+    print(f'Starting light cone catalog construction in simulation {sim_name:s}')
 
     # all redshifts, steps and comoving distances of light cones files; high z to low z
-    # remove presaving after testing done (or make sure presaved can be matched with simulation)
-    if (
-        not (Path('data_headers') / sim_name / 'coord_dist.npy').exists()
-        or not (Path('data_headers') / sim_name / 'redshifts.npy').exists()
-        or not (Path('data_headers') / sim_name / 'eta_drift.npy').exists()
-    ):
-        zs_all, steps_all, chis_all, etad_all = get_lc_info(Path('all_headers') / sim_name)
-        (Path('data_headers') / sim_name).mkdir(exist_ok=True, parents=True)
-        np.save(Path('data_headers') / sim_name / 'redshifts.npy', zs_all)
-        np.save(Path('data_headers') / sim_name / 'steps.npy', steps_all)
-        np.save(Path('data_headers') / sim_name / 'coord_dist.npy', chis_all)
-        np.save(Path('data_headers') / sim_name / 'eta_drift.npy', etad_all)
-    zs_all = np.load(Path('data_headers') / sim_name / 'redshifts.npy')
-    chis_all = np.load(Path('data_headers') / sim_name / 'coord_dist.npy')
-    zs_all[-1] = float(
-        '%.1f' % zs_all[-1]
-    )  # LHG: I guess this is trying to match up to some filename or something? tuks
+    states = Table.read(sim_path / 'state_log.asdf')
+    zs_all = states['Redshift']
+    chis_all = states['CoordinateDistanceHMpc']
 
     # get functions relating chi and z
     chi_of_z = interp1d(zs_all, chis_all)
-    z_of_chi = interp1d(chis_all, zs_all)
 
     # if merger tree redshift information has been saved, load it (if not, save it)
-    if not (Path('data_mt') / sim_name / 'zs_mt.npy').exists():
+    data_mt_fn = cat_lc_dir / 'zs_mt.asdf'
+    if not data_mt_fn.exists():
         # all merger tree snapshots and corresponding redshifts
-        snaps_mt = sorted(merger_dir.glob('associations_z*.0.asdf'))
-        zs_mt = get_zs_from_headers(snaps_mt)
-        (Path('data_mt') / sim_name).mkdir(exist_ok=True, parents=True)
-        np.save(Path('data_mt') / sim_name / 'zs_mt.npy', zs_mt)
-    zs_mt = np.load(Path('data_mt') / sim_name / 'zs_mt.npy')
+        mt_table = Table({'mt0_fns': list(merger_dir.glob('associations_z*.0.asdf'))})
+        mt_table['zs_mt'] = get_zs_from_headers(mt_table['mt0_fns'])
+        mt_table.sort('zs_mt')
+        # "associations_z0.000", etc; low-z to high-z
+        mt_table['mt_fn_stems'] = ['.'.join(fn.name.split('.')[:2]) for fn in mt_table['mt0_fns']]
+        del mt_table['mt0_fns']
+
+        data_mt_fn.parent.mkdir(exist_ok=True, parents=True)
+        mt_table.write(data_mt_fn)
+    else:
+        mt_table = Table.read(data_mt_fn)
 
     # number of superslabs
-    n_superslabs = len(list(merger_dir.glob('associations_z%4.3f.*.asdf' % zs_mt[0])))
+    n_superslabs = len(list(merger_dir.glob(mt_table['mt_fn_stems'][0] + '.*.asdf')))
     print('number of superslabs = ', n_superslabs)
 
+    zs_mt = mt_table['zs_mt']
+
     # starting and finishing redshift indices
-    ind_start = np.argmin(np.abs(zs_mt - z_start))
-    ind_stop = np.argmin(np.abs(zs_mt - z_stop))
+    ind_start = np.argmin(np.abs(zs_mt - z_start)) if z_start is not None else 0
+    ind_stop = np.argmin(np.abs(zs_mt - z_stop)) if z_stop is not None else len(mt_table)
 
     # initialize difference between the conformal time of the previous two catalogs
     delta_chi_old = 0.0
 
+    build_log = cat_lc_dir / 'tmp' / 'build_log.asdf'
     if resume:
         # if user wants to resume from previous state, create padded array for marking whether superslab has been loaded
         resume_flags = np.ones((n_superslabs, origins.shape[1]), dtype=bool)
 
         # previous redshift, distance between shells
-        infile = InputFile(cat_lc_dir / 'tmp' / 'build.log')
-        z_this_tmp = infile.z_prev
-        delta_chi_old = infile.delta_chi
-        superslab = infile.super_slab
+        build_state = load_build_state(build_log)
+        z_this_tmp = build_state['z_prev']
+        delta_chi_old = build_state['delta_chi']
+        superslab = build_state['super_slab']
 
         assert np.abs(zs_mt[ind_start] - z_this_tmp) < 1.0e-6, (
-            "Your recorded state is not for the currently requested redshift, can't resume from old. Last recorded state is z = %.3f"
-            % z_this_tmp
+            f"Your recorded state is not for the currently requested redshift, can't resume from old. Last recorded state is z = {z_this_tmp:.3f}"
         )
         assert np.abs((superslab_start - 1) % n_superslabs - superslab) < 1.0e-6, (
-            "Your recorded state is not for the currently requested superslab, can't resume from old. Last recorded state is superslab = %d"
-            % superslab
+            f"Your recorded state is not for the currently requested superslab, can't resume from old. Last recorded state is superslab = {superslab:d}"
         )
-        with open(cat_lc_dir / 'tmp' / 'build.log', 'a') as f:
-            f.writelines(['# Resuming from redshift z = %4.3f \n' % z_this_tmp])
+        print(f'Resuming from redshift z = {z_this_tmp:4.3f}')
     else:
         # delete the exisiting temporary files
-        tmp_files = list((cat_lc_dir / 'tmp').glob('*'))
-        for i in range(len(tmp_files)):
-            tmp_files[i].unlink()
+        for fn in (cat_lc_dir / 'tmp').glob('*'):
+            fn.unlink()
         resume_flags = np.zeros((n_superslabs, origins.shape[0]), dtype=bool)
 
     # fields to extract from the merger trees
@@ -349,45 +321,35 @@ def main(
         print('comoving distance between this and previous snapshot = ', delta_chi)
 
         # read merger trees file names at this and previous snapshot from minified version
-        fns_this = merger_dir.glob(f'associations_z{z_this:4.3f}.*.asdf.minified')
-        fns_prev = merger_dir.glob(f'associations_z{z_prev:4.3f}.*.asdf.minified')
-        fns_this = list(fns_this)
-        fns_prev = list(fns_prev)
-        minified = True
+        # TODO: should the associations already be minified?
+        fns_this = list(merger_dir.glob(f'associations_z{z_this:4.3f}.*.asdf.minified'))
+        fns_prev = list(merger_dir.glob(f'associations_z{z_prev:4.3f}.*.asdf.minified'))
 
         # if minified files not available,  load the regular files
         if len(list(fns_this)) == 0 or len(list(fns_prev)) == 0:
-            fns_this = merger_dir.glob(f'associations_z{z_this:4.3f}.*.asdf')
-            fns_prev = merger_dir.glob(f'associations_z{z_prev:4.3f}.*.asdf')
-            fns_this = list(fns_this)
-            fns_prev = list(fns_prev)
-            minified = False
-
-        # turn file names into strings
-        for counter in range(len(fns_this)):
-            fns_this[counter] = str(fns_this[counter])
-            fns_prev[counter] = str(fns_prev[counter])
+            fns_this = list(merger_dir.glob(f'associations_z{z_this:4.3f}.*.asdf'))
+            fns_prev = list(merger_dir.glob(f'associations_z{z_prev:4.3f}.*.asdf'))
 
         # number of merger tree files
         print('number of files = ', len(fns_this), len(fns_prev))
         assert n_superslabs == len(fns_this) and n_superslabs == len(fns_prev), 'Incomplete merger tree files'
         # reorder file names by super slab number
-        fns_this = reorder_by_slab(fns_this, minified)
-        fns_prev = reorder_by_slab(fns_prev, minified)
+        fns_this = reorder_by_slab(fns_this)
+        fns_prev = reorder_by_slab(fns_prev)
 
         # halo info files (used for masses and eligibility)
         fns_halo_this = [
-            str(cat_dir / f'z{zname_this:4.3f}' / 'halo_info' / f'halo_info_{counter:03d}.asdf')
+            (sim_path / 'halos' / f'z{zname_this:4.3f}' / 'halo_info' / f'halo_info_{counter:03d}.asdf')
             for counter in range(n_superslabs)
         ]
         fns_halo_prev = [
-            str(cat_dir / f'z{zname_prev:4.3f}' / 'halo_info' / f'halo_info_{counter:03d}.asdf')
+            (sim_path / 'halos' / f'z{zname_prev:4.3f}' / 'halo_info' / f'halo_info_{counter:03d}.asdf')
             for counter in range(n_superslabs)
         ]
 
         # get number of halos in each slab and number of slabs
-        N_halos_slabs_this, slabs_this = get_halos_per_slab(fns_this, minified)
-        N_halos_slabs_prev, slabs_prev = get_halos_per_slab(fns_prev, minified)
+        N_halos_slabs_this, slabs_this = get_halos_per_slab(fns_this)
+        N_halos_slabs_prev, slabs_prev = get_halos_per_slab(fns_prev)
 
         # We're going to be loading slabs in a rolling fashion:
         # reading the "high" slab at the leading edge, discarding the trailing "low" slab
@@ -397,14 +359,14 @@ def main(
             fns_prev[(superslab_start - 1) % n_superslabs],
             fns_halo_prev[(superslab_start - 1) % n_superslabs],
             fields=fields_mt,
-            minified=minified,
         )
-        mt_prev[superslab_start] = get_mt_info(
-            fns_prev[superslab_start],
-            fns_halo_prev[superslab_start],
-            fields=fields_mt,
-            minified=minified,
-        )
+        if superslab_start not in mt_prev:
+            # In the case of 1 superslab, this may be the same as what we just loaded
+            mt_prev[superslab_start] = get_mt_info(
+                fns_prev[superslab_start],
+                fns_halo_prev[superslab_start],
+                fields=fields_mt
+            )
 
         # loop over each superslab
         for k in range(superslab_start, n_superslabs):
@@ -413,9 +375,11 @@ def main(
             khigh = (k + 1) % n_superslabs
 
             # slide down by one
-            if (klow - 1) % n_superslabs in mt_prev:
-                del mt_prev[(klow - 1) % n_superslabs]
-            mt_prev[khigh] = get_mt_info(fns_prev[khigh], fns_halo_prev[khigh], fields_mt, minified)
+            klowm1 = (klow - 1) % n_superslabs
+            if klowm1 in mt_prev and klowm1 not in (klow, k, khigh):
+                del mt_prev[klowm1]
+            if khigh not in mt_prev:
+                mt_prev[khigh] = get_mt_info(fns_prev[khigh], fns_halo_prev[khigh], fields_mt)
 
             # starting and finishing superslab superslabs
             inds_fn_this = [k]
@@ -430,7 +394,7 @@ def main(
             )
 
             # get merger tree data for this snapshot and for the previous one
-            mt_data_this = get_mt_info(fns_this[k], fns_halo_this[k], fields_mt, minified)
+            mt_data_this = get_mt_info(fns_this[k], fns_halo_this[k], fields_mt)
 
             # number of halos in this step and previous step; this depends on the number of files requested
             N_halos_this = np.sum(N_halos_slabs_this[inds_fn_this])
@@ -441,14 +405,8 @@ def main(
             # organize data from this redshift into astropy tables
             Merger_this = mt_data_this['merger']
             cols = {
-                col: np.empty(
-                    N_halos_prev,
-                    dtype=(
-                        Merger_this[col].dtype,
-                        Merger_this[col].shape[1] if 'Position' in col else 1,
-                    ),
-                )
-                for col in Merger_this.keys()
+                col: np.empty((N_halos_prev,) + Merger_this[col].shape[1:], dtype=Merger_this[col].dtype)
+                for col in Merger_this.colnames
             }
             Merger_prev = Table(cols, copy=False)
 
@@ -457,9 +415,9 @@ def main(
 
             # organize data from prev redshift into astropy tables
             offset = 0
-            for key in mt_prev.keys():
-                size_superslab = len(mt_prev[key]['merger']['HaloIndex'])
-                Merger_prev[offset : offset + size_superslab] = mt_prev[key]['merger'][:]
+            for ss in mt_prev:
+                size_superslab = len(mt_prev[ss]['merger']['HaloIndex'])
+                Merger_prev[offset : offset + size_superslab] = mt_prev[ss]['merger'][:]
                 offset += size_superslab
 
             # mask where no merger tree info is available (because we don'to need to solve for eta star for those)
@@ -598,7 +556,7 @@ def main(
 
                 # percentage of objects that are part of this or previous snapshot
                 print(
-                    'percentage of halos in light cone %d with and without progenitor info = ' % o,
+                    f'percentage of halos in light cone {o:d} with and without progenitor info =',
                     np.sum(mask_lc_this_info) / len(mask_lc_this_info) * 100.0,
                     np.sum(mask_lc_this_noinfo) / len(mask_lc_this_noinfo) * 100.0,
                 )
@@ -609,6 +567,7 @@ def main(
 
                 if plot:
                     import matplotlib
+
                     matplotlib.use('Agg')
                     import matplotlib.pyplot as plt
 
@@ -626,7 +585,7 @@ def main(
 
                     plt.legend()
                     plt.axis('equal')
-                    plt.savefig('this_%d_%d_%d.png' % (i, k, o))
+                    plt.savefig(f'this_{i:d}_{k:d}_{o:d}.png')
                     plt.close()
 
                     x = Merger_prev_main_this_info_lc['Position'][:, 0]
@@ -641,7 +600,7 @@ def main(
 
                     plt.legend()
                     plt.axis('equal')
-                    plt.savefig('prev_%d_%d_%d.png' % (i, k, o))
+                    plt.savefig(f'prev_{i:d}_{k:d}_{o:d}.png')
                     plt.close()
 
                 # select halos without mt info that have had a light cone crossing
@@ -996,16 +955,7 @@ def main(
                 )
 
                 # save redshift of catalog that is next to load and difference in comoving between this and prev
-                with open(cat_lc_dir / 'tmp' / 'build.log', 'a') as f:
-                    f.writelines(
-                        [
-                            '# Next iteration: \n',
-                            'z_prev = %.8f \n' % z_prev,
-                            'delta_chi = %.8f \n' % delta_chi,
-                            'light_cone = %d \n' % o,
-                            'super_slab = %d \n' % k,
-                        ]
-                    )
+                save_build_state({'z_prev': z_prev, 'delta_chi': delta_chi, 'light_cone': o, 'super_slab': k}, build_log)
 
             del Merger_this, Merger_prev
 
@@ -1016,46 +966,46 @@ def main(
 # dict_keys(['HaloIndex', 'HaloMass', 'HaloVmax', 'IsAssociated', 'IsPotentialSplit', 'MainProgenitor', 'MainProgenitorFrac', 'MainProgenitorPrec', 'MainProgenitorPrecFrac', 'NumProgenitors', 'Position', 'Progenitors'])
 
 
+def save_build_state(state, build_log):
+    with asdf.AsdfFile({'state': state}) as af:
+        af.write_to(build_log)
+
+
+def load_build_state(build_log):
+    with asdf.open(build_log, lazy_load=False, memmap=False) as af:
+        return af['state']
+
+
 class ArgParseFormatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
     pass
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=ArgParseFormatter)
-    parser.add_argument('--sim_name', help='Simulation name', default=DEFAULTS['sim_name'])
+    parser.add_argument('sim_path', help='Simulation path')
     parser.add_argument(
-        '--z_start',
+        '--z-start',
         help='Initial redshift where we start building the trees',
         type=float,
-        default=DEFAULTS['z_start'],
     )
     parser.add_argument(
-        '--z_stop',
+        '--z-stop',
         help='Final redshift (inclusive)',
         type=float,
-        default=DEFAULTS['z_stop'],
-    )
-    parser.add_argument('--rpd', help='Repetitions per dimension', type=int, default=DEFAULTS['rpd'])
-    parser.add_argument(
-        '--compaso_parent',
-        help='CompaSO directory',
-        default=(DEFAULTS['compaso_parent']),
     )
     parser.add_argument(
-        '--merger_parent',
+        '--merger-parent',
         help='Merger tree directory',
-        default=(DEFAULTS['merger_parent']),
     )
     parser.add_argument(
-        '--catalog_parent',
-        help='Light cone catalog directory',
-        default=(DEFAULTS['catalog_parent']),
+        '--output-parent',
+        help='The output light cone catalog directory',
     )
     parser.add_argument(
-        '--superslab_start',
+        '--superslab-start',
         help='Initial superslab where we start building the trees',
         type=int,
-        default=DEFAULTS['superslab_start'],
+        default=0,
     )
     parser.add_argument(
         '--resume',

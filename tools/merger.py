@@ -1,17 +1,16 @@
+from pathlib import Path
+
 import asdf
 import numpy as np
 import scipy.stats as scist
 import matplotlib.pyplot as plt
 from astropy.table import Table
 from numba import jit
+import re
 
-def extract_superslab(fn):
+def extract_superslab(fn: Path):
     # looks like "associations_z0.100.0.asdf"
-    return int(fn.split('.')[-2])
-
-def extract_superslab_minified(fn):
-    # looks like "associations_z0.100.0.asdf.minified"
-    return int(fn.split('.')[-3])
+    return int(re.search(r"(\d+)\.asdf", fn.name).group(1))
     
 def extract_redshift(fn):
     # looks like "associations_z0.100.0.asdf.minified" or "associations_z0.100.0.asdf"
@@ -23,11 +22,10 @@ def get_zs_from_headers(snap_names):
     Read redshifts from merger tree files
     '''
     
-    zs = np.zeros(len(snap_names))
-    for i in range(len(snap_names)):
-        snap_name = snap_names[i]
+    zs = np.empty(len(snap_names))
+    for i, snap_name in enumerate(snap_names):
         with asdf.open(snap_name) as f:
-            zs[i] = np.float(f["header"]["Redshift"])
+            zs[i] = f["header"]["Redshift"]
     return zs
 
 def get_one_header(merger_dir):
@@ -65,14 +63,11 @@ def pack_inds(halo_ids, slab_ids):
     halo_ids = slab_ids*1e9 + halo_ids
     return halo_ids
 
-def reorder_by_slab(fns,minified):
+def reorder_by_slab(fns):
     '''
     Reorder filenames in terms of their slab number
     '''
-    if minified:
-        return sorted(fns, key=extract_superslab_minified)
-    else:
-        return sorted(fns, key=extract_superslab)
+    return sorted(fns, key=extract_superslab)
 
 def mark_ineligible_slow(nums, starts, main_progs, progs, halo_ind_prev, eligibility_prev, N_halos_slabs_prev, slabs_prev, inds_fn_prev):
     N_this_star_lc = len(nums)
@@ -175,7 +170,7 @@ def mark_ineligible_extrap(nums, starts, main_progs, progs, halo_ind_prev, eligi
 
 
 def simple_load(filenames, fields):
-    if type(filenames) is str:
+    if type(filenames) not in (list, tuple):
         filenames = [filenames]
     
     do_prog = 'Progenitors' in fields
@@ -212,19 +207,19 @@ def simple_load(filenames, fields):
     j = 0
     jp = 0
     for i, fn in enumerate(filenames):
-        print(f"File number {i+1:d} of {len(filenames)}")
-        f = asdf.open(fn, lazy_load=True, copy_arrays=True)
-        fdata = f['data']
-        thisN = len(fdata[fields[0]])
-        
-        for field in fields:
-            # Insert the data into the next slot in the table
-            t[field][j:j+thisN] = fdata[field]
+        print(f"Assocations file number {i+1:d} of {len(filenames)}")
+        with asdf.open(fn, lazy_load=True, memmap=False) as f:
+            fdata = f['data']
+            thisN = len(fdata[fields[0]])
             
-        if do_prog:
-            thisNp = len(fdata['Progenitors'])
-            p['Progenitors'][jp:jp+thisNp] = fdata['Progenitors']
-            jp += thisNp
+            for field in fields:
+                # Insert the data into the next slot in the table
+                t[field][j:j+thisN] = fdata[field]
+                
+            if do_prog:
+                thisNp = len(fdata['Progenitors'])
+                p['Progenitors'][jp:jp+thisNp] = fdata['Progenitors']
+                jp += thisNp
             
         j += thisN
     
@@ -310,23 +305,19 @@ def simple_load_old(filenames, fields):
     return final
 
 
-def get_halos_per_slab(filenames, minified):
+def get_halos_per_slab(filenames):
     # extract all slabs
-    if minified:
-        slabs = np.array([extract_superslab_minified(fn) for fn in filenames])
-    else:
-        slabs = np.array([extract_superslab(fn) for fn in filenames])
+    slabs = np.array([extract_superslab(fn) for fn in filenames])
     n_slabs = len(slabs)
     N_halos_slabs = np.zeros(n_slabs, dtype=int)
 
     # extract number of halos in each slab
     for i in range(len(filenames)):
         fn = filenames[i]
-        print("File number %i of %i" % (i, len(filenames) - 1))
-        f = asdf.open(fn)
-        N_halos = f["data"]["HaloIndex"].shape[0]
+        print(f"Halo info file number {i + 1} of {len(filenames)}")
+        with asdf.open(fn) as f:
+            N_halos = f["data"]["HaloIndex"].shape[0]
         N_halos_slabs[i] = N_halos
-        f.close()
         
     # sort in slab order
     i_sort = np.argsort(slabs)
