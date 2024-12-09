@@ -93,16 +93,23 @@ def get_mt_info(fn_load, fn_halo_load, fields):
         start_progs[1:] = num_progs.cumsum()[:-1]
         Merger.add_column(start_progs, name='StartProgenitors', copy=False)
 
-    # add cleaned masses
+    # add cleaned masses and halo velocities
+    halos = CompaSOHaloCatalog(fn_halo_load, subsamples=False, fields=['N', 'v_2com']).halos
     Merger.add_column(
-        CompaSOHaloCatalog(fn_halo_load, subsamples=False, fields=['N']).halos['N'],
+        halos['N'],
         copy=False,
-        name='N',
+        name='N'
     )
+    Merger.add_column(
+        halos['v_L2com'],
+        copy=False,
+        name='v_L2com'
+    )
+
     return mt_data
 
 
-def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, m1, m2, Lbox, origin, chs, complete=False, extra=4.0):
+def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, vel1, vel2, m1, m2, Lbox, origin, chs, complete=False, extra=4.0):
     """
     Solve when the crossing of the light cones occurs and the
     interpolated position and velocity. Merger trees loook for progenitors in a 4 Mpc/h radius
@@ -141,7 +148,8 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, m1, m2, Lbox, origin, chs, co
     # pos_star[pos_star < -Lbox/2.] = pos_star[pos_star < -Lbox/2.] + Lbox
 
     # interpolated velocity [km/s]
-    vel_star = v_avg * CONSTANTS['c']  # vel1+a_avg*(chi1-chi_star)
+    a_avg = (vel2 - vel1) / (chi1 - chi2)
+    vel_star = vel1 + a_avg * (chi1 - chi_star[:, None])
 
     # x is comoving position; r = x a; dr = a dx; r = a x; dr = da x + dx a; a/H
     # vel_star = dx/deta = dr/dt − H(t)r -> r is real space coord dr/dt = vel_star + a H(t) x
@@ -648,6 +656,8 @@ def main(
                     Merger_this_info_lc['Position'],
                     chi_prev,
                     chi_this,
+                    Merger_prev_main_this_info_lc['v_L2com'],
+                    Merger_this_info_lc['v_L2com'],
                     Merger_prev_main_this_info_lc['N'],
                     Merger_this_info_lc['N'],
                     Lbox,
@@ -738,9 +748,9 @@ def main(
                 Merger_lc['InterpolatedPosition'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
                     Merger_this_noinfo_lc['Position']
                 )
-                Merger_lc['InterpolatedVelocity'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = np.zeros_like(
-                    Merger_this_noinfo_lc['Position']
-                )
+                Merger_lc['InterpolatedVelocity'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = Merger_this_noinfo_lc[
+                    'v_L2com'
+                ]
                 Merger_lc['InterpolatedComoving'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
                     Merger_this_noinfo_lc['ComovingDistance']
                 )  # assign comoving distance based on position; used to be np.ones(Merger_this_noinfo_lc['Position'].shape[0])*chi_this
