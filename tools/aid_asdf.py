@@ -1,10 +1,14 @@
+import os
+from pathlib import Path
+
 import asdf
 import numpy as np
-import os
+from abacusnbody.data.bitpacked import unpack_pids, unpack_rvint
 from numba import jit
 
-from abacusnbody.data.bitpacked import unpack_rvint, unpack_pids
 from tools.compute_dist import dist
+
+COMPRESSION_KWARGS = dict(typesize='auto', shuffle='shuffle', compression_block_size=12*1024**2, blosc_block_size=3*1024**2, nthreads=4)
 
 # og
 pos_key = 'pos_interp'
@@ -218,20 +222,13 @@ def reindex_pid_pos_vel_AB(pid, pos, vel, npstartA, npoutA, npstartB, npoutB):
     return pid_new, pos_new, vel_new, npstart_newAB, npout_newA, npout_newB
 
 # save light cone catalog
-def save_asdf(table,filename,header,cat_lc_dir):
-    # cram into a dictionary
-    data_dict = {}
-    for j in range(len(table.dtype.names)):
-        field = table.dtype.names[j]
-        data_dict[field] = table[field]
-        
-    # create data tree structure
-    data_tree = {
-        "data": data_dict,
-        "header": header,
-    }
-    
-    # save the data and close file
-    output_file = asdf.AsdfFile(data_tree)
-    output_file.write_to(os.path.join(cat_lc_dir,filename+".asdf"))
-    output_file.close()
+def save_asdf(table, header, filename, compress=False):
+    filename = Path(filename)
+    cols_as_arrays = {name: np.asarray(table[name]) for name in table.colnames}
+    tree = {'data': cols_as_arrays, 'header': header}
+
+    filename.parent.mkdir(parents=True, exist_ok=True)
+
+    compression = 'blsc' if compress else None
+    with asdf.AsdfFile(tree) as af:
+        af.write_to(filename, all_array_compression=compression, compression_kwargs=COMPRESSION_KWARGS)

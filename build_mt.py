@@ -793,9 +793,9 @@ def main(
                 # write table with interpolated information
                 save_asdf(
                     Merger_lc,
-                    ('Merger_lc%d.%02d' % (o, k)),
                     header,
-                    cat_lc_dir / ('z%.3f' % zname_this),
+                    cat_lc_dir / f'z{zname_this:.3f}' / f'Merger_lc{o:d}.{k:02d}.asdf',
+                    compress=True,
                 )
 
                 # mask of the extrapolated halos
