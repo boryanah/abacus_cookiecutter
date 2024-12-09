@@ -182,6 +182,7 @@ def main(
     superslab_start=0,
     output_parent=None,
     merger_parent=None,
+    tmpdir=None,
     z_start=None,
     z_stop=None,
     resume=False,
@@ -209,12 +210,16 @@ def main(
 
     if output_parent is None:
         output_parent = sim_path.parent / 'halo_light_cones'
+    output_parent = Path(output_parent)
 
     if merger_parent is None:
         merger_parent = sim_path.parent / 'merger'
-
     merger_parent = Path(merger_parent)
-    output_parent = Path(output_parent)
+
+    if tmpdir is None:
+        tmpdir = output_parent / sim_name / 'tmp'
+    tmpdir = Path(tmpdir) / sim_name
+
     merger_dir = merger_parent / sim_name
     header = get_one_header(merger_dir)
 
@@ -237,7 +242,7 @@ def main(
     cat_lc_dir.mkdir(exist_ok=True, parents=True)
 
     # directory where we save the current state if we want to resume
-    (cat_lc_dir / 'tmp').mkdir(exist_ok=True, parents=True)
+    tmpdir.mkdir(exist_ok=True, parents=True)
     print(f'Starting light cone catalog construction in simulation {sim_name:s}')
 
     # all redshifts, steps and comoving distances of light cones files; high z to low z
@@ -277,7 +282,7 @@ def main(
     # initialize difference between the conformal time of the previous two catalogs
     delta_chi_old = 0.0
 
-    build_log = cat_lc_dir / 'tmp' / 'build_log.asdf'
+    build_log = tmpdir / 'build_log.asdf'
     if resume:
         # if user wants to resume from previous state, create padded array for marking whether superslab has been loaded
         resume_flags = np.ones((n_superslabs, origins.shape[1]), dtype=bool)
@@ -297,7 +302,7 @@ def main(
         print(f'Resuming from redshift z = {z_this_tmp:4.3f}')
     else:
         # delete the exisiting temporary files
-        for fn in (cat_lc_dir / 'tmp').glob('*'):
+        for fn in tmpdir.glob('*'):
             fn.unlink()
         resume_flags = np.zeros((n_superslabs, origins.shape[0]), dtype=bool)
 
@@ -505,12 +510,12 @@ def main(
                 # if eligible, can be selected for light cone redshift catalog
                 if (i != ind_start) or resume_flags[k, o]:
                     # dealing with the fact that these files may not exist for all origins and all superslabs
-                    if (cat_lc_dir / 'tmp' / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))).exists():
+                    if (tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))).exists():
                         eligibility_this = np.load(
-                            cat_lc_dir / 'tmp' / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))
+                            tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))
                         )
                         eligibility_extrap_this = np.load(
-                            cat_lc_dir / 'tmp' / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))
+                            tmpdir / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))
                         )
                     else:
                         eligibility_this = np.ones(N_halos_this, dtype=bool) & clean_halos_this
@@ -672,17 +677,16 @@ def main(
 
                 if i != ind_start or resume_flags[k, o]:
                     # check if we have information about this light cone origin, superslab and epoch
-                    if (cat_lc_dir / 'tmp' / ('Merger_next_z%4.3f_lc%d.%02d.asdf' % (z_this, o, k))).exists():
+                    if (tmpdir / f'Merger_next_z{z_this:4.3f}_lc{o:d}.{k:02d}').exists():
                         # load leftover halos from previously loaded redshift
                         with asdf.open(
-                            cat_lc_dir / 'tmp' / ('Merger_next_z%4.3f_lc%d.%02d.asdf' % (z_this, o, k)),
+                            tmpdir / f'Merger_next_z{z_this:4.3f}_lc{o:d}.{k:02d}',
                             lazy_load=True,
                             copy_arrays=True,
                         ) as f:
-                            Merger_next = f['data']
+                            Merger_next = Table(f['data'])
 
                         # if you are a halo that appears here, we are gonna ignore you
-                        Merger_next = Table(Merger_next)
                         N_next_lc = len(Merger_next['HaloIndex'])
 
                         # tmp1: to-append and extrapolated from before; tmp2: to-append and interpolated now; get rid of these; TODO: can be done less expensively
@@ -939,24 +943,24 @@ def main(
                     eligibility_prev_idx = eligibility_prev[offset : offset + N_halos_slabs_prev[idx]]
                     eligibility_extrap_prev_idx = eligibility_extrap_prev[offset : offset + N_halos_slabs_prev[idx]]
                     # combine current information with previously existing
-                    if (cat_lc_dir / 'tmp' / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx))).exists():
+                    if (tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx))).exists():
                         eligibility_prev_old = np.load(
-                            cat_lc_dir / 'tmp' / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx))
+                            tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx))
                         )
                         eligibility_prev_idx = eligibility_prev_old & eligibility_prev_idx
                         eligibility_extrap_prev_old = np.load(
-                            cat_lc_dir / 'tmp' / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx))
+                            tmpdir / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx))
                         )
                         eligibility_extrap_prev_idx = eligibility_extrap_prev_old & eligibility_extrap_prev_idx
                         print('Appending to existing eligibility file for %4.3f, %d, %02d!' % (z_prev, o, idx))
                     else:
                         print('First time seeing eligibility file for %4.3f, %d, %02d!' % (z_prev, o, idx))
                     np.save(
-                        cat_lc_dir / 'tmp' / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx)),
+                        tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx)),
                         eligibility_prev_idx,
                     )
                     np.save(
-                        cat_lc_dir / 'tmp' / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx)),
+                        tmpdir / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_prev, o, idx)),
                         eligibility_extrap_prev_idx,
                     )
                     offset += N_halos_slabs_prev[idx]
@@ -965,9 +969,8 @@ def main(
                 # write as table the information about halos that are part of next loaded redshift
                 save_asdf(
                     Merger_next,
-                    ('Merger_next_z%4.3f_lc%d.%02d' % (z_prev, o, k)),
                     header,
-                    cat_lc_dir / 'tmp',
+                    tmpdir / (f'Merger_next_z{z_prev:4.3f}_lc{o:d}.{k:02d}'),
                 )
 
                 # save redshift of catalog that is next to load and difference in comoving between this and prev
@@ -1016,6 +1019,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--output-parent',
         help='The output light cone catalog directory',
+    )
+    parser.add_argument(
+        '--tmpdir',
+        help='Temporary working directory. Interrupted runs will be resumed from here.',
     )
     parser.add_argument(
         '--superslab-start',
