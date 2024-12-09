@@ -725,11 +725,11 @@ def main(
                 # save those arrays
                 Merger_lc = Table(
                     {
-                        'HaloIndex': np.zeros(N_lc, dtype=Merger_this_info_lc['HaloIndex'].dtype),
-                        'InterpolatedVelocity': np.zeros(N_lc, dtype=(np.float32, 3)),
-                        'InterpolatedPosition': np.zeros(N_lc, dtype=(np.float32, 3)),
-                        'InterpolatedComoving': np.zeros(N_lc, dtype=np.float32),
-                        'InterpolatedN': np.zeros(N_lc, dtype=np.float32),
+                        'HaloIndex': np.empty(N_lc, dtype=Merger_this_info_lc['HaloIndex'].dtype),
+                        'InterpolatedVelocity': np.empty(N_lc, dtype=(np.float32, 3)),
+                        'InterpolatedPosition': np.empty(N_lc, dtype=(np.float32, 3)),
+                        'InterpolatedComoving': np.empty(N_lc, dtype=np.float32),
+                        'InterpolatedN': np.empty(N_lc, dtype=np.float32),
                     }
                 )
 
@@ -860,11 +860,11 @@ def main(
                 N_next = np.sum(~bool_star_this_info_lc)
                 Merger_next = Table(
                     {
-                        'HaloIndex': np.zeros(N_next, dtype=Merger_lc['HaloIndex'].dtype),
-                        'InterpolatedVelocity': np.zeros(N_next, dtype=(np.float32, 3)),
-                        'InterpolatedPosition': np.zeros(N_next, dtype=(np.float32, 3)),
-                        'InterpolatedComoving': np.zeros(N_next, dtype=np.float32),
-                        'InterpolatedN': np.zeros(N_next, dtype=np.float32),
+                        'HaloIndex': np.empty(N_next, dtype=Merger_lc['HaloIndex'].dtype),
+                        'InterpolatedVelocity': np.empty(N_next, dtype=(np.float32, 3)),
+                        'InterpolatedPosition': np.empty(N_next, dtype=(np.float32, 3)),
+                        'InterpolatedComoving': np.empty(N_next, dtype=np.float32),
+                        'InterpolatedN': np.empty(N_next, dtype=np.float32),
                     }
                 )
                 Merger_next['HaloIndex'][:] = Merger_prev_main_this_info_lc['HaloIndex'][~bool_star_this_info_lc]
