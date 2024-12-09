@@ -127,8 +127,14 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, m1, m2, Lbox, origin, chs, co
     pos_star = pos1 + v_avg * (chi1 - chi_star[:, None])
 
     # get interpolated masses of the halos
-    m_dot = (m2 - m1) / (chi1 - chi2)
+    # they're coming in as uint32, so avoid overflow by casting to float
+    m_dot = (m2.astype(np.float64) - m1.astype(np.float64)) / (chi1 - chi2)
     m_star = m1 + m_dot * (chi1 - chi_star)
+
+    # float32 precision is probably good enough,
+    # and we'll round to make sure the floats compress well.
+    # These could be ints, but float helps remind people that there was a lossy step.
+    m_star = m_star.astype(np.float32).round()
 
     # enforce boundary conditions by periodic wrapping
     # pos_star[pos_star >= Lbox/2.] = pos_star[pos_star >= Lbox/2.] - Lbox
