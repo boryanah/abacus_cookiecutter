@@ -2,8 +2,6 @@ from pathlib import Path
 
 import asdf
 import numpy as np
-import scipy.stats as scist
-import matplotlib.pyplot as plt
 from astropy.table import Table
 from numba import jit
 import re
