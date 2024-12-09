@@ -94,7 +94,7 @@ def get_mt_info(fn_load, fn_halo_load, fields):
         Merger.add_column(start_progs, name='StartProgenitors', copy=False)
 
     # add cleaned masses and halo velocities
-    halos = CompaSOHaloCatalog(fn_halo_load, subsamples=False, fields=['N', 'v_2com']).halos
+    halos = CompaSOHaloCatalog(fn_halo_load, subsamples=False, fields=['N', 'v_L2com']).halos
     Merger.add_column(
         halos['N'],
         copy=False,
