@@ -787,8 +787,12 @@ def main(
                     Merger_lc['InterpolatedPosition'], ind_origin=o, all_origins=origins
                 )
 
-                # create directory for this redshift
-                (cat_lc_dir / ('z%.3f' % zname_this)).mkdir(exist_ok=True, parents=True)
+                # Keep most of the position precision, since that's global over all repeats
+                compress_lossy(Merger_lc['InterpolatedPosition'], keep_bits=20)
+                compress_lossy(Merger_lc['InterpolatedComoving'], keep_bits=20)
+                # Keep 12 bits of velocity precision, which is what we keep from rvint
+                compress_lossy(Merger_lc['InterpolatedVelocity'], keep_bits=12)
+                # Don't need to compress the masses, they were already rounded to integers
 
                 # write table with interpolated information
                 save_asdf(
@@ -983,6 +987,13 @@ def main(
 
 
 # dict_keys(['HaloIndex', 'HaloMass', 'HaloVmax', 'IsAssociated', 'IsPotentialSplit', 'MainProgenitor', 'MainProgenitorFrac', 'MainProgenitorPrec', 'MainProgenitorPrecFrac', 'NumProgenitors', 'Position', 'Progenitors'])
+
+
+def compress_lossy(arr, keep_bits):
+    # Null out the (24 - keep_bits) least significant bits
+    int_view = arr.view(np.uint32)
+    mask = np.uint32(0xFFFFFFFF) << (24 - keep_bits)
+    int_view[:] &= mask
 
 
 def save_build_state(state, build_log):

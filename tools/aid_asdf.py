@@ -8,7 +8,7 @@ from numba import jit
 
 from tools.compute_dist import dist
 
-COMPRESSION_KWARGS = dict(typesize='auto', shuffle='shuffle', compression_block_size=12*1024**2, blosc_block_size=3*1024**2, nthreads=4)
+COMPRESSION_KWARGS = dict(typesize='auto', shuffle='bitshuffle', compression_block_size=12*1024**2, blosc_block_size=3*1024**2, nthreads=4)
 
 # og
 pos_key = 'pos_interp'
