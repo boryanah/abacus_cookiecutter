@@ -95,16 +95,8 @@ def get_mt_info(fn_load, fn_halo_load, fields):
 
     # add cleaned masses and halo velocities
     halos = CompaSOHaloCatalog(fn_halo_load, subsamples=False, fields=['N', 'v_L2com']).halos
-    Merger.add_column(
-        halos['N'],
-        copy=False,
-        name='N'
-    )
-    Merger.add_column(
-        halos['v_L2com'],
-        copy=False,
-        name='v_L2com'
-    )
+    Merger.add_column(halos['N'], copy=False, name='N')
+    Merger.add_column(halos['v_L2com'], copy=False, name='v_L2com')
 
     return mt_data
 
@@ -143,8 +135,8 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, vel1, vel2, m1, m2, Lbox, ori
     m_star = m_star.astype(np.float32).round()
 
     # mask halos with zero current or previous mass
-    mask = np.isclose(m1, 0.) | np.isclose(m2, 0.)
-    m_star[mask] = 0.
+    mask = np.isclose(m1, 0.0) | np.isclose(m2, 0.0)
+    m_star[mask] = 0.0
 
     # enforce boundary conditions by periodic wrapping
     # pos_star[pos_star >= Lbox/2.] = pos_star[pos_star >= Lbox/2.] - Lbox
@@ -231,12 +223,12 @@ def main(
     # location of the LC origins in Mpc/h
     # FUTURE: each LCOrigin is repeated LCBoxRepeats times
     # origins = np.array(header['LightConeOrigins']).reshape(-1,3)
-    assert len(np.array(header['LCOrigins']).reshape(-1,3)) == 1
+    assert len(np.array(header['LCOrigins']).reshape(-1, 3)) == 1
     rpd = 2 * header.get('LCBoxRepeats', 1) + 1
-    
+
     # The rpd^3 box origins, in "Fourier" order, i.e.:
     # [0, 1, ..., N//2, -N//2, ..., -1] (in each dimension)
-    origins = np.mgrid[:rpd,:rpd,:rpd].reshape(3,-1).T
+    origins = np.mgrid[:rpd, :rpd, :rpd].reshape(3, -1).T
     origins[origins > rpd // 2] -= rpd
     origins = origins * Lbox
 
@@ -296,12 +288,12 @@ def main(
         delta_chi_old = build_state['delta_chi']
         superslab = build_state['super_slab']
 
-        assert np.abs(zs_mt[ind_start] - z_this_tmp) < 1.0e-6, (
-            f"Your recorded state is not for the currently requested redshift, can't resume from old. Last recorded state is z = {z_this_tmp:.3f}"
-        )
-        assert np.abs((superslab_start - 1) % n_superslabs - superslab) < 1.0e-6, (
-            f"Your recorded state is not for the currently requested superslab, can't resume from old. Last recorded state is superslab = {superslab:d}"
-        )
+        assert (
+            np.abs(zs_mt[ind_start] - z_this_tmp) < 1.0e-6
+        ), f"Your recorded state is not for the currently requested redshift, can't resume from old. Last recorded state is z = {z_this_tmp:.3f}"
+        assert (
+            np.abs((superslab_start - 1) % n_superslabs - superslab) < 1.0e-6
+        ), f"Your recorded state is not for the currently requested superslab, can't resume from old. Last recorded state is superslab = {superslab:d}"
         print(f'Resuming from redshift z = {z_this_tmp:4.3f}')
     else:
         # delete the exisiting temporary files
@@ -385,9 +377,7 @@ def main(
         if superslab_start not in mt_prev:
             # In the case of 1 superslab, this may be the same as what we just loaded
             mt_prev[superslab_start] = get_mt_info(
-                fns_prev[superslab_start],
-                fns_halo_prev[superslab_start],
-                fields=fields_mt
+                fns_prev[superslab_start], fns_halo_prev[superslab_start], fields=fields_mt
             )
 
         # loop over each superslab
@@ -514,9 +504,7 @@ def main(
                 if (i != ind_start) or resume_flags[k, o]:
                     # dealing with the fact that these files may not exist for all origins and all superslabs
                     if (tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))).exists():
-                        eligibility_this = np.load(
-                            tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))
-                        )
+                        eligibility_this = np.load(tmpdir / ('eligibility_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k)))
                         eligibility_extrap_this = np.load(
                             tmpdir / ('eligibility_extrap_prev_z%4.3f_lc%d.%02d.npy' % (z_this, o, k))
                         )
@@ -755,9 +743,9 @@ def main(
                 Merger_lc['InterpolatedPosition'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
                     Merger_this_noinfo_lc['Position']
                 )
-                Merger_lc['InterpolatedVelocity'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = Merger_this_noinfo_lc[
-                    'v_L2com'
-                ]
+                Merger_lc['InterpolatedVelocity'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
+                    Merger_this_noinfo_lc['v_L2com']
+                )
                 Merger_lc['InterpolatedComoving'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
                     Merger_this_noinfo_lc['ComovingDistance']
                 )  # assign comoving distance based on position; used to be np.ones(Merger_this_noinfo_lc['Position'].shape[0])*chi_this
@@ -797,7 +785,8 @@ def main(
                 _, inds = np.unique(Merger_lc['HaloIndex'], return_index=True)
                 mask_uni[inds] = True
                 Merger_lc = Merger_lc[mask_uni]
-                del mask_uni, inds; gc.collect()
+                del mask_uni, inds
+                gc.collect()
 
                 # Keep most of the position precision, since that's global over all repeats
                 compress_lossy(Merger_lc['InterpolatedPosition'], keep_bits=20)
@@ -990,7 +979,9 @@ def main(
                 )
 
                 # save redshift of catalog that is next to load and difference in comoving between this and prev
-                save_build_state({'z_prev': z_prev, 'delta_chi': delta_chi, 'light_cone': o, 'super_slab': k}, build_log)
+                save_build_state(
+                    {'z_prev': z_prev, 'delta_chi': delta_chi, 'light_cone': o, 'super_slab': k}, build_log
+                )
 
             del Merger_this, Merger_prev
 
