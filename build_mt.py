@@ -117,7 +117,6 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, vel1, vel2, m1, m2, Lbox, ori
 
     # periodic wrapping of the positions of the particles
     r1, r2, pos1, pos2 = wrapping(r1, r2, pos1, pos2, chs[1], chs[0], Lbox, origin, extra)
-
     assert np.all(((r2 <= chs[1]) & (r2 > chs[0])) | ((r1 <= chs[1]) & (r1 > chs[0]))), "Wrapping didn't work"
 
     # in a very very very very small number of cases (i.e. z = 0.8, corner halos), the current halo position
@@ -142,6 +141,10 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, vel1, vel2, m1, m2, Lbox, ori
     # and we'll round to make sure the floats compress well.
     # These could be ints, but float helps remind people that there was a lossy step.
     m_star = m_star.astype(np.float32).round()
+
+    # mask halos with zero current or previous mass
+    mask = np.isclose(m1, 0.) | np.isclose(m2, 0.)
+    m_star[mask] = 0.
 
     # enforce boundary conditions by periodic wrapping
     # pos_star[pos_star >= Lbox/2.] = pos_star[pos_star >= Lbox/2.] - Lbox
@@ -786,6 +789,15 @@ def main(
                 Merger_lc['InterpolatedPosition'] = offset_pos(
                     Merger_lc['InterpolatedPosition'], ind_origin=o, all_origins=origins
                 )
+
+                # halo indices for this origin
+                mask_uni = np.zeros(len(Merger_lc), dtype=bool)
+
+                # find unique halo indices (already for specific origins)
+                _, inds = np.unique(Merger_lc['HaloIndex'], return_index=True)
+                mask_uni[inds] = True
+                Merger_lc = Merger_lc[mask_uni]
+                del mask_uni, inds; gc.collect()
 
                 # Keep most of the position precision, since that's global over all repeats
                 compress_lossy(Merger_lc['InterpolatedPosition'], keep_bits=20)
