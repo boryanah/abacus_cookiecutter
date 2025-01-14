@@ -176,7 +176,7 @@ def main(
     sim_path,
     superslab_start=0,
     output_parent=None,
-    merger_parent=None,
+    merger_dir=None,
     tmpdir=None,
     z_start=None,
     z_stop=None,
@@ -207,15 +207,14 @@ def main(
         output_parent = sim_path.parent / 'halo_light_cones'
     output_parent = Path(output_parent)
 
-    if merger_parent is None:
-        merger_parent = sim_path.parent / 'merger'
-    merger_parent = Path(merger_parent)
+    if merger_dir is None:
+        merger_dir = sim_path.parent / 'merger'
+    merger_dir = Path(merger_dir)
 
     if tmpdir is None:
         tmpdir = output_parent / sim_name / 'tmp'
     tmpdir = Path(tmpdir) / sim_name
 
-    merger_dir = merger_parent / sim_name
     header = get_one_header(merger_dir)
 
     # simulation parameters
@@ -288,12 +287,12 @@ def main(
         delta_chi_old = build_state['delta_chi']
         superslab = build_state['super_slab']
 
-        assert (
-            np.abs(zs_mt[ind_start] - z_this_tmp) < 1.0e-6
-        ), f"Your recorded state is not for the currently requested redshift, can't resume from old. Last recorded state is z = {z_this_tmp:.3f}"
-        assert (
-            np.abs((superslab_start - 1) % n_superslabs - superslab) < 1.0e-6
-        ), f"Your recorded state is not for the currently requested superslab, can't resume from old. Last recorded state is superslab = {superslab:d}"
+        assert np.abs(zs_mt[ind_start] - z_this_tmp) < 1.0e-6, (
+            f"Your recorded state is not for the currently requested redshift, can't resume from old. Last recorded state is z = {z_this_tmp:.3f}"
+        )
+        assert np.abs((superslab_start - 1) % n_superslabs - superslab) < 1.0e-6, (
+            f"Your recorded state is not for the currently requested superslab, can't resume from old. Last recorded state is superslab = {superslab:d}"
+        )
         print(f'Resuming from redshift z = {z_this_tmp:4.3f}')
     else:
         # delete the exisiting temporary files
@@ -334,15 +333,9 @@ def main(
         # delta_chi_new = chi_pprev - chi_prev # not currently used
         print('comoving distance between this and previous snapshot = ', delta_chi)
 
-        # read merger trees file names at this and previous snapshot from minified version
-        # TODO: should the associations already be minified?
-        fns_this = list(merger_dir.glob(f'associations_z{z_this:4.3f}.*.asdf.minified'))
-        fns_prev = list(merger_dir.glob(f'associations_z{z_prev:4.3f}.*.asdf.minified'))
-
-        # if minified files not available,  load the regular files
-        if len(list(fns_this)) == 0 or len(list(fns_prev)) == 0:
-            fns_this = list(merger_dir.glob(f'associations_z{z_this:4.3f}.*.asdf'))
-            fns_prev = list(merger_dir.glob(f'associations_z{z_prev:4.3f}.*.asdf'))
+        # read merger trees file names at this and previous snapshot
+        fns_this = list(merger_dir.glob(mt_table['mt_fn_stems'][i] + '.*.asdf'))
+        fns_prev = list(merger_dir.glob(mt_table['mt_fn_stems'][i + 1] + '.*.asdf'))
 
         # number of merger tree files
         print('number of files = ', len(fns_this), len(fns_prev))
@@ -673,7 +666,7 @@ def main(
                         with asdf.open(
                             tmpdir / f'Merger_next_z{z_this:4.3f}_lc{o:d}.{k:02d}',
                             lazy_load=True,
-                            copy_arrays=True,
+                            memmap=False,
                         ) as f:
                             Merger_next = Table(f['data'])
 
@@ -1027,7 +1020,7 @@ if __name__ == '__main__':
         type=float,
     )
     parser.add_argument(
-        '--merger-parent',
+        '--merger-dir',
         help='Merger tree directory',
     )
     parser.add_argument(

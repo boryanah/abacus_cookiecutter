@@ -17,13 +17,13 @@ pos_key = 'pos_interp'
 
 def load_lc_pid_rv(lc_pid_fn, lc_rv_fn, Lbox, PPD):
     # load and unpack pids
-    lc_pids = asdf.open(lc_pid_fn, lazy_load=True, copy_arrays=True)
+    lc_pids = asdf.open(lc_pid_fn, lazy_load=True, memmap=False)
     lc_pid = lc_pids['data']['packedpid'][:]
     lc_pid = unpack_pids(lc_pid, box=Lbox, ppd=PPD, pid=True)['pid']
     lc_pids.close()
 
     # load positions and velocities
-    lc_rvs = asdf.open(lc_rv_fn, lazy_load=True, copy_arrays=True)
+    lc_rvs = asdf.open(lc_rv_fn, lazy_load=True, memmap=False)
     lc_rv = lc_rvs['data']['rvint'][:]
     lc_rvs.close()
     return lc_pid, lc_rv
@@ -31,7 +31,7 @@ def load_lc_pid_rv(lc_pid_fn, lc_rv_fn, Lbox, PPD):
 def load_mt_pid(mt_fn,Lbox,PPD):
     # load mtree catalog
     print("load mtree file = ", mt_fn)
-    mt_pids = asdf.open(mt_fn, lazy_load=True, copy_arrays=True)
+    mt_pids = asdf.open(mt_fn, lazy_load=True, memmap=False)
     mt_pid = mt_pids['data']['pid'][:]
     mt_pid = unpack_pids(mt_pid, box=Lbox, ppd=PPD, pid=True)['pid']
     header = mt_pids['header']
@@ -42,7 +42,7 @@ def load_mt_pid(mt_fn,Lbox,PPD):
 def load_mt_pid_pos_vel(mt_fn,Lbox,PPD):
     # load mtree catalog
     print("load mtree file = ", mt_fn)
-    mt_pids = asdf.open(mt_fn, lazy_load=True, copy_arrays=True)
+    mt_pids = asdf.open(mt_fn, lazy_load=True, memmap=False)
     mt_pid = mt_pids['data']['pid'][:]
     mt_pid = unpack_pids(mt_pid, box=Lbox, ppd=PPD, pid=True)['pid']
     mt_pos = mt_pids['data']['pos'][:]
@@ -55,7 +55,7 @@ def load_mt_pid_pos_vel(mt_fn,Lbox,PPD):
 def load_mt_npout(halo_mt_fn):
     # load mtree catalog
     print("load halo mtree file = ",halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_npout = f['data']['npoutA'][:]
     f.close()
     return mt_npout
@@ -63,7 +63,7 @@ def load_mt_npout(halo_mt_fn):
 def load_mt_npout_B(halo_mt_fn):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_npout = f['data']['npoutB'][:]
     f.close()
     return mt_npout
@@ -71,7 +71,7 @@ def load_mt_npout_B(halo_mt_fn):
 def load_mt_origin(halo_mt_fn):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_origin = (f['data']['origin'][:])%3
     f.close()
     return mt_origin
@@ -79,7 +79,7 @@ def load_mt_origin(halo_mt_fn):
 def load_mt_pos(halo_mt_fn):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_pos = f['data'][pos_key][:]
     f.close()
     return mt_pos
@@ -87,7 +87,7 @@ def load_mt_pos(halo_mt_fn):
 def load_mt_pos_yz(halo_mt_fn):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_pos_yz = f['data'][pos_key][:, 1:].astype(np.float16)
     f.close()
     return mt_pos_yz
@@ -95,7 +95,7 @@ def load_mt_pos_yz(halo_mt_fn):
 def load_mt_cond_edge(halo_mt_fn, Lbox):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_pos_yz = f['data'][pos_key][:, 1:]
     mt_cond_edge = np.zeros(mt_pos_yz.shape[0], dtype=np.int8)
     mt_cond_edge[mt_pos_yz[:, 1] < Lbox/2.+10.] += 1
@@ -108,7 +108,7 @@ def load_mt_cond_edge(halo_mt_fn, Lbox):
 def load_mt_origin_edge(halo_mt_fn, Lbox):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     
     mt_pos_yz = f['data'][pos_key][:, 1:]
     mt_cond_edge = np.zeros(mt_pos_yz.shape[0], dtype=np.int8)
@@ -124,7 +124,7 @@ def load_mt_origin_edge(halo_mt_fn, Lbox):
 def load_mt_dist(halo_mt_fn, origin):
     # load mtree catalog
     print("load halo mtree file = ", halo_mt_fn)
-    f = asdf.open(halo_mt_fn, lazy_load=True, copy_arrays=True)
+    f = asdf.open(halo_mt_fn, lazy_load=True, memmap=False)
     mt_pos = f['data'][pos_key]
     f.close()
     mt_dist = dist(mt_pos, origin)

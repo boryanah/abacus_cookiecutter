@@ -319,7 +319,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, catalog_parent, merger_paren
                 if num == 0: continue
                 
                 # load the light cone arrays
-                with asdf.open(cat_lc_dir / ("z%.3f"%zname_mt) / ("Merger_lc%d.%02d.asdf"%(o,k)), lazy_load=True, copy_arrays=True) as f:
+                with asdf.open(cat_lc_dir / ("z%.3f"%zname_mt) / ("Merger_lc%d.%02d.asdf"%(o,k)), lazy_load=True, memmap=False) as f:
                     merger_lc = f['data']
 
                 # the files should be congruent
@@ -539,7 +539,7 @@ def main(sim_name, z_start, z_stop, compaso_parent, catalog_parent, merger_paren
             # loop over each observer origin
             for o in origins_k:
                 
-                with asdf.open(cat_lc_dir / ("z%4.3f"%zname_mt) / ("pid_lc%d.%02d.asdf"%(o,k)), lazy_load=True, copy_arrays=True) as f:
+                with asdf.open(cat_lc_dir / ("z%4.3f"%zname_mt) / ("pid_lc%d.%02d.asdf"%(o,k)), lazy_load=True, memmap=False) as f:
                     pid_lc = f['data']['pid'][:]
                     if (save_pos or save_z0) and loaded_pos:
                         pos_lc = f['data']['pos'][:]

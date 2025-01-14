@@ -237,7 +237,7 @@ def simple_load_old(filenames, fields):
     for i in range(len(filenames)):
         fn = filenames[i]
         print("File number %i of %i" % (i, len(filenames) - 1))
-        f = asdf.open(fn, lazy_load=True, copy_arrays=True)
+        f = asdf.open(fn, lazy_load=True, memmap=False)
         fdata = f['data']
 
         N_halos = fdata[fields[0]].shape[0]

@@ -28,7 +28,7 @@ def rewrite_asdf(old_file, new_file):
     """
     old_file = str(old_file)
     new_file = str(new_file)
-    with asdf.open(old_file, copy_arrays=True) as oldaf:
+    with asdf.open(old_file, memmap=False) as oldaf:
         newtree = dict(header=oldaf['header'].copy())
         newtree['data'] = {c: np.asarray(oldaf['data'][c]) for c in oldaf['data']}
 

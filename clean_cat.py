@@ -147,7 +147,7 @@ def float_trunc(a, zerobits):
 def clean_cat(z_current, cat_lc_dir, want_subsample_B):
     # load the halo light cone catalog
     halo_fn = cat_lc_dir / ("z%4.3f"%z_current) / "halo_info_lc.asdf"
-    with asdf.open(halo_fn, lazy_load=True, copy_arrays=True) as f:
+    with asdf.open(halo_fn, lazy_load=True, memmap=False) as f:
         halo_header = f['header']
         table_halo = f['data']
 
@@ -158,7 +158,7 @@ def clean_cat(z_current, cat_lc_dir, want_subsample_B):
 
     # load the particles light cone catalog
     parts_fn = cat_lc_dir / ("z%4.3f"%z_current) / "pid_rv_lc.asdf"
-    with asdf.open(parts_fn, lazy_load=True, copy_arrays=True) as f:
+    with asdf.open(parts_fn, lazy_load=True, memmap=False) as f:
         parts_header = f['header']
         table_parts = f['data']
 
