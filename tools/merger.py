@@ -38,7 +38,7 @@ def get_one_header(merger_dir):
         header = af['header']
     return header
 
-def unpack_inds(halo_ids):
+def unpack_inds(halo_ids, unpack_slab_ids = True):
     '''
     Unpack indices in Sownak's format of Nslice*1e12 
     + superSlabNum*1e9 + halo_position_superSlab
@@ -48,7 +48,10 @@ def unpack_inds(halo_ids):
     id_factor = int(1e12)
     slab_factor = int(1e9)
     index = (halo_ids % slab_factor).astype(int)
-    slab_number = ((halo_ids % id_factor - index) // slab_factor).astype(int)
+    if unpack_slab_ids:
+        slab_number = ((halo_ids % id_factor - index) // slab_factor).astype(int)
+    else:
+        slab_number = None
     return slab_number, index
 
 def pack_inds(halo_ids, slab_ids):

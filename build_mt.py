@@ -48,8 +48,9 @@ def correct_inds(halo_ids, N_halos_slabs, slabs, inds_fn):
     # number of halos in the loaded superslabs
     N_halos_load = np.array([N_halos_slabs[i] for i in inds_fn])
 
+    onefile = len(inds_fn) == 1
     # unpack slab and index for each halo
-    slab_ids, ids = unpack_inds(halo_ids)
+    slab_ids, ids = unpack_inds(halo_ids, unpack_slab_ids=not onefile)
 
     # total number of halos in the slabs that we have loaded
     # N_halos = np.sum(N_halos_load)
@@ -57,7 +58,7 @@ def correct_inds(halo_ids, N_halos_slabs, slabs, inds_fn):
     offsets[1:] = np.cumsum(N_halos_load)[:-1]
 
     # determine if unpacking halos for only one file (Merger_this['HaloIndex']) -- no need to offset
-    if len(inds_fn) == 1:
+    if onefile:
         return ids
 
     # select the halos belonging to given slab
@@ -491,7 +492,7 @@ def main(
                 Merger_prev['ComovingDistance'][:] = dist(Merger_prev['Position'], origin)
 
                 # merger tree data of main progenitor halos corresponding to the halos in current snapshot
-                Merger_prev_main_this = Merger_prev[Merger_this['MainProgenitor']].copy()
+                Merger_prev_main_this = Merger_prev[Merger_this['MainProgenitor']]
 
                 # if eligible, can be selected for light cone redshift catalog
                 if (i != ind_start) or resume_flags[k, o]:
@@ -518,11 +519,13 @@ def main(
                 mask_info_this = info_this & eligibility_this
 
                 # halos that have merger tree information
-                Merger_this_info = Merger_this[mask_info_this].copy()
-                Merger_prev_main_this_info = Merger_prev_main_this[mask_info_this]
+                idx_info_this = mask_info_this.nonzero()
+                Merger_this_info = Merger_this[idx_info_this]
+                Merger_prev_main_this_info = Merger_prev_main_this[idx_info_this]
 
                 # halos that don't have merger tree information
-                Merger_this_noinfo = Merger_this[mask_noinfo_this].copy()
+                idx_noinfo_this = mask_noinfo_this.nonzero()
+                Merger_this_noinfo = Merger_this[idx_noinfo_this]
 
                 # select objects that are crossing the light cones
                 cond_1 = (Merger_this_info['ComovingDistance'] > chs[0]) & (
@@ -565,8 +568,9 @@ def main(
                 )
 
                 # select halos with mt info that have had a light cone crossing
-                Merger_this_info_lc = Merger_this_info[mask_lc_this_info]
-                Merger_prev_main_this_info_lc = Merger_prev_main_this_info[mask_lc_this_info]
+                idx_lc_this_info = mask_lc_this_info.nonzero()
+                Merger_this_info_lc = Merger_this_info[idx_lc_this_info]
+                Merger_prev_main_this_info_lc = Merger_prev_main_this_info[idx_lc_this_info]
 
                 if plot:
                     import matplotlib
@@ -607,7 +611,8 @@ def main(
                     plt.close()
 
                 # select halos without mt info that have had a light cone crossing
-                Merger_this_noinfo_lc = Merger_this_noinfo[mask_lc_this_noinfo]
+                idx_lc_this_noinfo = mask_lc_this_noinfo.nonzero()
+                Merger_this_noinfo_lc = Merger_this_noinfo[idx_lc_this_noinfo]
 
                 # add columns for new interpolated position, velocity and comoving distance tuks could add all in one line; could shorten names
                 Merger_this_info_lc.add_column(
