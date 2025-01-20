@@ -272,7 +272,7 @@ def main(
 
     # starting and finishing redshift indices
     ind_start = np.argmin(np.abs(zs_mt - z_start)) if z_start is not None else 0
-    ind_stop = np.argmin(np.abs(zs_mt - z_stop)) if z_stop is not None else len(mt_table)
+    ind_stop = np.argmin(np.abs(zs_mt - z_stop)) if z_stop is not None else len(mt_table) - 2
 
     # initialize difference between the conformal time of the previous two catalogs
     delta_chi_old = 0.0
