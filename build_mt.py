@@ -628,7 +628,7 @@ def main(
                 Merger_this_info_lc.add_column(
                     np.empty(len(Merger_this_info_lc), dtype=np.float32),
                     copy=False,
-                    name='InterpolatedComoving',
+                    name='InterpolatedComovingDist',
                 )
                 Merger_this_info_lc.add_column(
                     np.empty(len(Merger_this_info_lc), dtype=np.float32),
@@ -638,7 +638,7 @@ def main(
 
                 # get chi star where lc crosses halo trajectory; bool is False where closer to previous
                 (
-                    Merger_this_info_lc['InterpolatedComoving'],
+                    Merger_this_info_lc['InterpolatedComovingDist'],
                     Merger_this_info_lc['InterpolatedPosition'],
                     Merger_this_info_lc['InterpolatedVelocity'],
                     Merger_this_info_lc['InterpolatedN'],
@@ -717,7 +717,7 @@ def main(
                         'HaloIndex': np.empty(N_lc, dtype=Merger_this_info_lc['HaloIndex'].dtype),
                         'InterpolatedVelocity': np.empty(N_lc, dtype=(np.float32, 3)),
                         'InterpolatedPosition': np.empty(N_lc, dtype=(np.float32, 3)),
-                        'InterpolatedComoving': np.empty(N_lc, dtype=np.float32),
+                        'InterpolatedComovingDist': np.empty(N_lc, dtype=np.float32),
                         'InterpolatedN': np.empty(N_lc, dtype=np.float32),
                     }
                 )
@@ -729,7 +729,7 @@ def main(
                 Merger_lc['InterpolatedVelocity'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedVelocity'][
                     bool_star_this_info_lc
                 ]
-                Merger_lc['InterpolatedComoving'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedComoving'][
+                Merger_lc['InterpolatedComovingDist'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedComovingDist'][
                     bool_star_this_info_lc
                 ]
                 Merger_lc['InterpolatedN'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedN'][
@@ -744,7 +744,7 @@ def main(
                 Merger_lc['InterpolatedVelocity'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
                     Merger_this_noinfo_lc['v_L2com']
                 )
-                Merger_lc['InterpolatedComoving'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
+                Merger_lc['InterpolatedComovingDist'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = (
                     Merger_this_noinfo_lc['ComovingDistance']
                 )  # assign comoving distance based on position; used to be np.ones(Merger_this_noinfo_lc['Position'].shape[0])*chi_this
                 Merger_lc['InterpolatedN'][N_this_star_lc : N_this_star_lc + N_this_noinfo_lc] = Merger_this_noinfo_lc[
@@ -765,7 +765,7 @@ def main(
                     if N_next_lc != 0:
                         Merger_lc['InterpolatedPosition'][-N_next_lc:] = Merger_next['InterpolatedPosition'][:]
                         Merger_lc['InterpolatedVelocity'][-N_next_lc:] = Merger_next['InterpolatedVelocity'][:]
-                        Merger_lc['InterpolatedComoving'][-N_next_lc:] = Merger_next['InterpolatedComoving'][:]
+                        Merger_lc['InterpolatedComovingDist'][-N_next_lc:] = Merger_next['InterpolatedComovingDist'][:]
                         Merger_lc['InterpolatedN'][-N_next_lc:] = Merger_next['InterpolatedN'][:]
                         Merger_lc['HaloIndex'][-N_next_lc:] = Merger_next['HaloIndex'][:]
                         del Merger_next
@@ -788,7 +788,7 @@ def main(
 
                 # Keep most of the position precision, since that's global over all repeats
                 compress_lossy(Merger_lc['InterpolatedPosition'], keep_bits=20)
-                compress_lossy(Merger_lc['InterpolatedComoving'], keep_bits=20)
+                compress_lossy(Merger_lc['InterpolatedComovingDist'], keep_bits=20)
                 # Keep 12 bits of velocity precision, which is what we keep from rvint
                 compress_lossy(Merger_lc['InterpolatedVelocity'], keep_bits=12)
                 # Don't need to compress the masses, they were already rounded to integers
@@ -802,8 +802,8 @@ def main(
                 )
 
                 # mask of the extrapolated halos
-                mask_extrap = (Merger_this_info_lc['InterpolatedComoving'] > chi_prev) | (
-                    Merger_this_info_lc['InterpolatedComoving'] < chi_this
+                mask_extrap = (Merger_this_info_lc['InterpolatedComovingDist'] > chi_prev) | (
+                    Merger_this_info_lc['InterpolatedComovingDist'] < chi_this
                 )
                 print(
                     'percentage extrapolated = ',
@@ -866,7 +866,7 @@ def main(
                         'HaloIndex': np.empty(N_next, dtype=Merger_lc['HaloIndex'].dtype),
                         'InterpolatedVelocity': np.empty(N_next, dtype=(np.float32, 3)),
                         'InterpolatedPosition': np.empty(N_next, dtype=(np.float32, 3)),
-                        'InterpolatedComoving': np.empty(N_next, dtype=np.float32),
+                        'InterpolatedComovingDist': np.empty(N_next, dtype=np.float32),
                         'InterpolatedN': np.empty(N_next, dtype=np.float32),
                     }
                 )
@@ -877,7 +877,7 @@ def main(
                 Merger_next['InterpolatedPosition'][:] = Merger_this_info_lc['InterpolatedPosition'][
                     ~bool_star_this_info_lc
                 ]
-                Merger_next['InterpolatedComoving'][:] = Merger_this_info_lc['InterpolatedComoving'][
+                Merger_next['InterpolatedComovingDist'][:] = Merger_this_info_lc['InterpolatedComovingDist'][
                     ~bool_star_this_info_lc
                 ]
                 Merger_next['InterpolatedN'][:] = Merger_this_info_lc['InterpolatedN'][~bool_star_this_info_lc]
