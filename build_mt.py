@@ -19,6 +19,7 @@ from pathlib import Path
 
 import asdf
 import numpy as np
+import numpy.testing as npt
 from abacusnbody.data.compaso_halo_catalog import CompaSOHaloCatalog
 from astropy.table import Table
 from scipy.interpolate import interp1d
@@ -102,10 +103,26 @@ def get_mt_info(fn_load, fn_halo_load, fields):
     return mt_data
 
 
-def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, vel1, vel2, m1, m2, Lbox, origin, chs, complete=False, extra=4.0):
+def solve_crossing(
+    r1,
+    r2,
+    pos1,
+    pos2,
+    chi1,
+    chi2,
+    vel1,
+    vel2,
+    m1,
+    m2,
+    Lbox,
+    origin,
+    chs,
+    complete=False,
+    extra=4.0,
+):
     """
     Solve when the crossing of the light cones occurs and the
-    interpolated position and velocity. Merger trees loook for progenitors in a 4 Mpc/h radius
+    interpolated position and velocity. Merger trees look for progenitors in a 4 Mpc/h radius
     """
 
     # periodic wrapping of the positions of the particles
@@ -155,7 +172,17 @@ def solve_crossing(r1, r2, pos1, pos2, chi1, chi2, vel1, vel2, m1, m2, Lbox, ori
     bool_star = np.abs(chi1 - chi_star) > np.abs(chi2 - chi_star)
 
     # condition to check whether halo in this light cone band
-    assert np.all((chi_star <= chs[1] + extra) & (chi_star > chs[0] - extra)), 'Solution is out of bounds'
+    # `extra` relates to the merger tree search radius, while `pad` is a buffer
+    bounds_width = 2 * extra + chs[1] - chs[0]
+    pad = 0.1 * bounds_width
+    in_bounds = (chi_star <= chs[1] + extra + pad) & (chi_star > chs[0] - extra - pad)
+    if not np.all(in_bounds):
+        message = [
+            f'Bounds: {chs[0] - extra - pad}, {chs[1] + extra + pad}',
+            f'chi_star: {chi_star[~in_bounds]}',
+        ]
+        message = '\n'.join(message)
+        raise ValueError(f'Solution is out of bounds:\n{message}')
 
     return chi_star, pos_star, vel_star, m_star, bool_star
 
@@ -371,7 +398,9 @@ def main(
         if superslab_start not in mt_prev:
             # In the case of 1 superslab, this may be the same as what we just loaded
             mt_prev[superslab_start] = get_mt_info(
-                fns_prev[superslab_start], fns_halo_prev[superslab_start], fields=fields_mt
+                fns_prev[superslab_start],
+                fns_halo_prev[superslab_start],
+                fields=fields_mt,
             )
 
         # loop over each superslab
@@ -411,7 +440,10 @@ def main(
             # organize data from this redshift into astropy tables
             Merger_this = mt_data_this['merger']
             cols = {
-                col: np.empty((N_halos_prev,) + Merger_this[col].shape[1:], dtype=Merger_this[col].dtype)
+                col: np.empty(
+                    (N_halos_prev,) + Merger_this[col].shape[1:],
+                    dtype=Merger_this[col].dtype,
+                )
                 for col in Merger_this.colnames
             }
             Merger_prev = Table(cols, copy=False)
@@ -729,9 +761,9 @@ def main(
                 Merger_lc['InterpolatedVelocity'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedVelocity'][
                     bool_star_this_info_lc
                 ]
-                Merger_lc['InterpolatedComovingDist'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedComovingDist'][
-                    bool_star_this_info_lc
-                ]
+                Merger_lc['InterpolatedComovingDist'][:N_this_star_lc] = Merger_this_info_lc[
+                    'InterpolatedComovingDist'
+                ][bool_star_this_info_lc]
                 Merger_lc['InterpolatedN'][:N_this_star_lc] = Merger_this_info_lc['InterpolatedN'][
                     bool_star_this_info_lc
                 ]
@@ -978,7 +1010,13 @@ def main(
 
                 # save redshift of catalog that is next to load and difference in comoving between this and prev
                 save_build_state(
-                    {'z_prev': z_prev, 'delta_chi': delta_chi, 'light_cone': o, 'super_slab': k}, build_log
+                    {
+                        'z_prev': z_prev,
+                        'delta_chi': delta_chi,
+                        'light_cone': o,
+                        'super_slab': k,
+                    },
+                    build_log,
                 )
 
             del Merger_this, Merger_prev
