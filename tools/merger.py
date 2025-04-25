@@ -183,6 +183,7 @@ def simple_load(filenames, fields):
         N_prog_tot = 0
         fields.remove('Progenitors')  # treat specially
     
+    header = None
     for fn in filenames:
         with asdf.open(fn) as af:
             # Peek at the first field to get the total length
@@ -198,12 +199,15 @@ def simple_load(filenames, fields):
             
             if do_prog:
                 N_prog_tot += len(af['data']['Progenitors'])
-                
+
+            if header is None:
+                header = af['header']
+
     # Make the empty tables
-    t = Table({f:np.empty(Ntot, dtype=dtypes[f]) for f in fields}, copy=False)
+    t = Table({f: np.empty(Ntot, dtype=dtypes[f]) for f in fields}, copy=False, meta=header)
     if do_prog:
-        p = Table({'Progenitors':np.empty(N_prog_tot, dtype=np.int64)}, copy=False)
-    
+        p = Table({'Progenitors': np.empty(N_prog_tot, dtype=np.int64)}, copy=False)
+
     # Fill the data into the empty tables
     j = 0
     jp = 0

@@ -19,7 +19,6 @@ from pathlib import Path
 
 import asdf
 import numpy as np
-import numpy.testing as npt
 from abacusnbody.data.compaso_halo_catalog import CompaSOHaloCatalog
 from astropy.table import Table
 from scipy.interpolate import interp1d
@@ -243,15 +242,15 @@ def main(
         tmpdir = output_parent / sim_name / 'tmp'
     tmpdir = Path(tmpdir) / sim_name
 
-    header = get_one_header(merger_dir)
+    common_header = get_one_header(merger_dir)
 
     # simulation parameters
-    Lbox = header['BoxSize']
+    Lbox = common_header['BoxSize']
     # location of the LC origins in Mpc/h
     # FUTURE: each LCOrigin is repeated LCBoxRepeats times
     # origins = np.array(header['LightConeOrigins']).reshape(-1,3)
-    assert len(np.array(header['LCOrigins']).reshape(-1, 3)) == 1
-    rpd = 2 * header.get('LCBoxRepeats', 1) + 1
+    assert len(np.array(common_header['LCOrigins']).reshape(-1, 3)) == 1
+    rpd = 2 * common_header.get('LCBoxRepeats', 1) + 1
 
     # The rpd^3 box origins, in "Fourier" order, i.e.:
     # [0, 1, ..., N//2, -N//2, ..., -1] (in each dimension)
@@ -347,8 +346,8 @@ def main(
         print('redshift of this and the previous snapshot = ', z_this, z_prev)
 
         # how to name folder
-        zname_this = min(header['L1OutputRedshifts'], key=lambda z: abs(z - z_this))
-        zname_prev = min(header['L1OutputRedshifts'], key=lambda z: abs(z - z_prev))
+        zname_this = min(common_header['L1OutputRedshifts'], key=lambda z: abs(z - z_this))
+        zname_prev = min(common_header['L1OutputRedshifts'], key=lambda z: abs(z - z_prev))
 
         # check that you are starting at a reasonable redshift
         assert z_this >= np.min(zs_all), 'You need to set starting redshift to the smallest value of the merger tree'
@@ -439,14 +438,17 @@ def main(
 
             # organize data from this redshift into astropy tables
             Merger_this = mt_data_this['merger']
-            cols = {
-                col: np.empty(
-                    (N_halos_prev,) + Merger_this[col].shape[1:],
-                    dtype=Merger_this[col].dtype,
-                )
-                for col in Merger_this.colnames
-            }
-            Merger_prev = Table(cols, copy=False)
+            Merger_prev = Table(
+                {
+                    col: np.empty(
+                        (N_halos_prev,) + Merger_this[col].shape[1:],
+                        dtype=Merger_this[col].dtype,
+                    )
+                    for col in Merger_this.colnames
+                },
+                copy=False,
+                meta=dict(mt_prev[k]['merger'].meta),
+            )
 
             # make a boolean array with eligible halos
             clean_halos_this = Merger_this['N'] > 0
@@ -751,7 +753,9 @@ def main(
                         'InterpolatedPosition': np.empty(N_lc, dtype=(np.float32, 3)),
                         'InterpolatedComovingDist': np.empty(N_lc, dtype=np.float32),
                         'InterpolatedN': np.empty(N_lc, dtype=np.float32),
-                    }
+                    },
+                    copy=False,
+                    meta=dict(Merger_this_info_lc.meta),
                 )
 
                 # record interpolated position and velocity for those with info belonging to current redshift
@@ -828,7 +832,6 @@ def main(
                 # write table with interpolated information
                 save_asdf(
                     Merger_lc,
-                    header,
                     cat_lc_dir / f'z{zname_this:.3f}' / f'Merger_lc{o:d}.{k:02d}.asdf',
                     compress=True,
                 )
@@ -1004,7 +1007,6 @@ def main(
                 # write as table the information about halos that are part of next loaded redshift
                 save_asdf(
                     Merger_next,
-                    header,
                     tmpdir / (f'Merger_next_z{z_prev:4.3f}_lc{o:d}.{k:02d}'),
                 )
 

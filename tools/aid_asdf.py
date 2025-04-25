@@ -222,9 +222,10 @@ def reindex_pid_pos_vel_AB(pid, pos, vel, npstartA, npoutA, npstartB, npoutB):
     return pid_new, pos_new, vel_new, npstart_newAB, npout_newA, npout_newB
 
 # save light cone catalog
-def save_asdf(table, header, filename, compress=False):
+def save_asdf(table, filename, compress=False):
     filename = Path(filename)
     cols_as_arrays = {name: np.asarray(table[name]) for name in table.colnames}
+    header = dict(table.meta)
     tree = {'data': cols_as_arrays, 'header': header}
 
     filename.parent.mkdir(parents=True, exist_ok=True)
